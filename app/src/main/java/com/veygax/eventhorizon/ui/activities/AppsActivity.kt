@@ -143,10 +143,8 @@ fun AppsScreen() {
             title = "MiXplorer",
             description = "Root File Explorer",
             packageName = "com.mixplorer",
-            type = AppInstallType.AUTOMATIC,
             installAction = { ctx, onStatus, _ ->
-                val directUrl = "https://mixplorer.com/beta/MiXplorer_v6.68.4-Beta_B24112312-arm64.apk"
-                AppInstaller.downloadAndInstallFromUrl(ctx, directUrl, "MiXplorer", onStatus)
+                AppInstaller.downloadAndInstall(ctx, "driftywinds", "mixplorer-releases", onStatus)
             }
         )
     )
