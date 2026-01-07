@@ -760,16 +760,30 @@ fun TweaksScreen(
                 .padding(innerPadding)
                 .fillMaxSize()
         ) {
-            PrimaryTabRow(selectedTabIndex = pagerState.currentPage) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 tabTitles.forEachIndexed { index, title ->
-                    Tab(
-                        selected = pagerState.currentPage == index,
-                        onClick = {
-                            coroutineScope.launch {
-                                pagerState.animateScrollToPage(index)
-                            }
-                        },
-                        text = { Text(title) }
+                    val selected = pagerState.currentPage == index
+
+                    Text(
+                        text = title,
+                        modifier = Modifier
+                            .padding(horizontal = 14.dp, vertical = 8.dp)
+                            .clickable {
+                                coroutineScope.launch {
+                                    pagerState.animateScrollToPage(index)
+                                }
+                            },
+                        style = MaterialTheme.typography.titleMedium,
+                        color = if (selected)
+                            MaterialTheme.colorScheme.primary
+                        else
+                            MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
