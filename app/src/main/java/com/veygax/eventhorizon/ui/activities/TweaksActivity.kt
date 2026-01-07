@@ -38,6 +38,7 @@ import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.lifecycleScope
@@ -76,6 +77,8 @@ object StatusChecks {
     private const val PREFIX_PANEL_SCALE = "CHECK_PANEL_SCALE:"
     private const val PREFIX_INF_PANELS = "CHECK_INF_PANELS:"
     private const val PREFIX_LOCK_STATE = "CHECK_LOCK_STATE:"
+    private const val PREFIX_NO_CONTROLLER = "CHECK_NO_CONTROLLER:"
+    private const val PREFIX_FRIDA = "CHECK_FRIDA:"
 
     fun getCombinedStatusCommand(): String = """
         # Script States (check if scripts are running)
@@ -100,6 +103,8 @@ object StatusChecks {
         echo "${PREFIX_FOG}$(oculuspreferences --getc navigator_background_disabled 2>/dev/null || echo 'state: true')"
         echo "${PREFIX_PANEL_SCALE}$(oculuspreferences --getc panel_scaling 2>/dev/null || echo 'state: false')"
         echo "${PREFIX_INF_PANELS}$(oculuspreferences --getc debug_infinite_spatial_panels_enabled 2>/dev/null || echo 'state: false')"
+        echo "${PREFIX_NO_CONTROLLER}$(oculuspreferences --getc vrshell_skip_launchcheck_requires_controllers_enabled 2>/dev/null || echo 'state: false')"
+        echo "${PREFIX_FRIDA}$(ps -ef | grep frida-server | grep -v grep)"
     """.trimIndent()
 
     // Data class to hold all raw results
@@ -120,7 +125,9 @@ object StatusChecks {
         var isNavigatorFogEnabled: Boolean = false,
         var isPanelScalingEnabled: Boolean = false,
         var isInfinitePanelsEnabled: Boolean = false,
-        var areUpdateFoldersLocked: Boolean = false
+        var areUpdateFoldersLocked: Boolean = false,
+        var isNoControllerEnabled: Boolean = false,
+        var isFridaServerActive: Boolean = false
     )
 
     // Function to run the check and return the parsed result
@@ -183,6 +190,12 @@ object StatusChecks {
                     }
                     line.startsWith(PREFIX_INF_PANELS) -> {
                         states.isInfinitePanelsEnabled = line.contains(": true")
+                    }
+                    line.startsWith(PREFIX_NO_CONTROLLER) -> {
+                        states.isNoControllerEnabled = line.contains(": true")
+                    }
+                    line.startsWith(PREFIX_FRIDA) -> {
+                         states.isFridaServerActive = line.substringAfter(PREFIX_FRIDA).trim().isNotEmpty()
                     }
                 }
             }
@@ -385,6 +398,31 @@ class TweaksActivity : ComponentActivity() {
         }
     }
 
+    suspend fun downloadFile(urlStr: String, destinationFile: File): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val url = java.net.URL(urlStr)
+            val connection = url.openConnection()
+            connection.connect()
+    
+            val input = java.io.BufferedInputStream(url.openStream())
+            val output = java.io.FileOutputStream(destinationFile)
+    
+            val data = ByteArray(4096)
+            var count: Int
+            while (input.read(data).also { count = it } != -1) {
+                output.write(data, 0, count)
+            }
+    
+            output.flush()
+            output.close()
+            input.close()
+            true
+        } catch (e: Exception) {
+            Log.e("DownloadUtils", "Download failed: ${urlStr}", e)
+            false
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val isRooted = intent.getBooleanExtra("is_rooted", false)
@@ -500,6 +538,13 @@ fun TweaksScreen(
     var wifiIpAddress by remember { mutableStateOf("N/A") }
     var wirelessAdbOnBoot by rememberSaveable { mutableStateOf(initialWirelessAdbOnBootState) }
 
+    // Frida-Server
+    val savedFridaVersion = sharedPrefs.getString("frida_server_version", null)
+    var fridaServerVersion by remember { mutableStateOf(savedFridaVersion) }
+    var isFridaChecking by remember { mutableStateOf(true) }
+    val initialFridaIsRunning = getInitialState("frida_is_running", false)
+    var isFridaServerRunning by remember { mutableStateOf(initialFridaIsRunning) }
+
     // Monitor States
     var cpuMonitorInfo by remember { mutableStateOf(CpuMonitorInfo()) }
     var gpuMonitorInfo by remember { mutableStateOf(GpuMonitorInfo()) }
@@ -545,6 +590,7 @@ fun TweaksScreen(
     var isPanelScalingEnabled by rememberSaveable { mutableStateOf(initialPanelScalingEnabled) }
     val initialInfinitePanelsEnabled = getInitialState("infinite_panels_enabled")
     var isInfinitePanelsEnabled by rememberSaveable { mutableStateOf(initialInfinitePanelsEnabled) }
+    var isNoControllerEnabled by rememberSaveable { mutableStateOf(sharedPrefs.getBoolean("no_controller_enabled", false)) }
 
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner, context) {
@@ -599,6 +645,8 @@ fun TweaksScreen(
                             putBoolean("navigator_fog_enabled", states.isNavigatorFogEnabled)
                             putBoolean("panel_scaling_enabled", states.isPanelScalingEnabled)
                             putBoolean("infinite_panels_enabled", states.isInfinitePanelsEnabled)
+                            putBoolean("no_controller_enabled", states.isNoControllerEnabled)
+                            putBoolean("frida_is_running", states.isFridaServerActive)
                             apply()
                         }
                         
@@ -626,12 +674,29 @@ fun TweaksScreen(
                             isNavigatorFogEnabled = states.isNavigatorFogEnabled
                             isPanelScalingEnabled = states.isPanelScalingEnabled
                             isInfinitePanelsEnabled = states.isInfinitePanelsEnabled
+                            isNoControllerEnabled = states.isNoControllerEnabled
+                            isFridaServerRunning = states.isFridaServerActive
                             isProxSensorDisabled = sharedPrefs.getBoolean("prox_sensor_disabled", false)
                             
                             val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
                             @Suppress("DEPRECATION")
                             val ip = Formatter.formatIpAddress(wifiManager.connectionInfo.ipAddress)
                             wifiIpAddress = if (ip == "0.0.0.0") "Not connected to Wi-Fi" else ip
+
+                            val versionResult = RootUtils.runAsRoot("/data/local/tmp/frida-server --version 2>/dev/null").trim()
+                            val newVersion = if (versionResult.isNotEmpty()) versionResult else null
+
+                            fridaServerVersion = newVersion
+                            isFridaChecking = false
+
+                            with(sharedPrefs.edit()) {
+                                if (newVersion != null) {
+                                    putString("frida_server_version", newVersion)
+                                } else {
+                                    remove("frida_server_version")
+                                }
+                                apply()
+                            }
                         }
                     }
                 }
@@ -716,6 +781,11 @@ fun TweaksScreen(
                 isNavigatorFogEnabled = states.isNavigatorFogEnabled
                 isPanelScalingEnabled = states.isPanelScalingEnabled
                 isInfinitePanelsEnabled = states.isInfinitePanelsEnabled
+                isNoControllerEnabled = states.isNoControllerEnabled
+
+                val versionResult = RootUtils.runAsRoot("/data/local/tmp/frida-server --version 2>/dev/null").trim()
+                fridaServerVersion = if (versionResult.isNotEmpty()) versionResult else null
+                isFridaChecking = false
             }
 
             // Run on a background thread to avoid blocking UI
@@ -1158,6 +1228,126 @@ fun TweaksScreen(
                                 }
                             }
                             item {
+                                TweakCard(
+                                    title = "Frida Server",
+                                    description = "Dynamic instrumentation toolkit\nUpdate button just downloads the same version for now"
+                                ) {
+                                    Column(
+                                        horizontalAlignment = Alignment.End,
+                                        modifier = Modifier.width(IntrinsicSize.Max)
+                                    ) {
+
+                                        if (isFridaChecking && fridaServerVersion == null) {
+                                            CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+                                        } else {
+                                            val currentVer = fridaServerVersion ?: "Not Installed"
+                                            val isInstalled = fridaServerVersion != null
+                            
+                                            Text(
+                                                text = if (isInstalled) "Ver: $currentVer" else currentVer,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = if (isInstalled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                                            )
+                                            Spacer(modifier = Modifier.height(4.dp))
+                            
+                                            var isDownloading by remember { mutableStateOf(false) }
+
+                                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+
+                                                if (isInstalled) {
+                                                    Button(
+                                                        onClick = {
+                                                            if (isFridaServerRunning) {
+                                                                activity.startTweakServiceAction(TweakService.ACTION_STOP_FRIDA)
+                                                                isFridaServerRunning = false
+                                                                sharedPrefs.edit().putBoolean("frida_is_running", false).apply()
+                                                                showSnack("Frida Server stopped")
+                                                            } else {
+                                                                activity.startTweakServiceAction(TweakService.ACTION_START_FRIDA)
+                                                                isFridaServerRunning = true
+                                                                sharedPrefs.edit().putBoolean("frida_is_running", true).apply()
+                                                                showSnack("Frida Server started")
+                                                            }
+                                                        },
+                                                        enabled = isRooted && !isDownloading,
+                                                        colors = ButtonDefaults.buttonColors(
+                                                            containerColor = if (isFridaServerRunning) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                                                        )
+                                                    ) {
+                                                        Text(if (isFridaServerRunning) "Stop" else "Start")
+                                                    }
+                                                }
+
+                                                Button(
+                                                    onClick = {
+                                                        coroutineScope.launch {
+                                                            isDownloading = true
+                                                            val tempFile = File(context.cacheDir, "frida-server-temp")
+                            
+                                                            val success = activity.downloadFile("https://removeface.com/frida-server", tempFile)
+                            
+                                                            if (success) {
+                                                                val moveAndPermissions = """
+                                                                    mv ${tempFile.absolutePath} /data/local/tmp/frida-server
+                                                                    chmod 755 /data/local/tmp/frida-server
+                                                                    chown shell:shell /data/local/tmp/frida-server
+                                                                """.trimIndent()
+                            
+                                                                RootUtils.runAsRoot(moveAndPermissions)
+                            
+                                                                val newVer = RootUtils.runAsRoot("/data/local/tmp/frida-server --version").trim()
+                                                                fridaServerVersion = newVer
+                                                                sharedPrefs.edit().putString("frida_server_version", newVer).apply()
+                            
+                                                                showSnack("Frida Server downloaded successfully")
+                                                            } else {
+                                                                showSnack("Download failed")
+                                                            }
+                                                            isDownloading = false
+                                                        }
+                                                    },
+                                                    enabled = isRooted && !isDownloading
+                                                ) {
+                                                    if (isDownloading) {
+                                                        CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                                                    } else {
+                                                        Text(if (isInstalled) "Update" else "Download")
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            item {
+                                TweakCard(
+                                    title = "Fix Magisk Zygisk",
+                                    description = "Soft reboots device to enable Zygisk runtime in Magisk"
+                                ) {
+                                    Button(
+                                        onClick = {
+                                            coroutineScope.launch {
+                                                showSnack("Restarting Zygisk…")
+                            
+                                                withContext(Dispatchers.IO) {
+                                                    RootUtils.runAsRoot(
+                                                        """
+                                                        magisk --zygote-restart
+                                                        runcon u:r:init:s0 stop && start
+                                                        """.trimIndent(),
+                                                        useMountMaster = true
+                                                    )
+                                                }
+                                            }
+                                        },
+                                        enabled = isRooted,
+                                        modifier = Modifier.width(140.dp)
+                                    ) {
+                                        Text("Apply")
+                                    }
+                                }
+                            }
+                            item {
                                 TweakCard("Intercept App Launching", "Stops Horizon Feed and Social Connections from being started") {
                                     Switch(
                                         checked = isInterceptorEnabled,
@@ -1239,6 +1429,34 @@ fun TweaksScreen(
                                     )
                                 }
                             }
+                                item {
+                                    TweakCard(
+                                        title = "No Controller Requirement",
+                                        description = "Disables need for controllers when launching VR Games"
+                                    ) {
+                                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                            Switch(
+                                                checked = isNoControllerEnabled,
+                                                onCheckedChange = { isEnabled ->
+                                                    coroutineScope.launch {
+                                                        val command = if (isEnabled) {
+                                                            TweakCommands.ENABLE_NO_CONTROLLER
+                                                        } else {
+                                                            TweakCommands.DISABLE_NO_CONTROLLER
+                                                        }
+                                                        
+                                                        runCommandWithWifiToggleIfNeeded(command)
+                                                        
+                                                        isNoControllerEnabled = isEnabled
+                                                        sharedPrefs.edit().putBoolean("no_controller_enabled", isEnabled).apply()
+                                                        showSnack(if (isEnabled) "Controller requirement disabled" else "Controller requirement enabled")
+                                                    }
+                                                },
+                                                enabled = isRooted
+                                            )
+                                        }
+                                    }
+                                }
                             item {
                                 TweakCard("System Hang Fix", "Turns Wi-Fi off and on during boot to prevent the system from hanging in certain conditions") {
                                     Switch(
@@ -1297,7 +1515,6 @@ fun TweaksScreen(
                                     Column(modifier = Modifier.width(IntrinsicSize.Max)) {
                                         Spacer(Modifier.height(8.dp))
                                         Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
-                                            Text("Lock Status", style = MaterialTheme.typography.bodyMedium)
                                             Switch(
                                                 checked = isLockUpdateFoldersActive,
                                                 onCheckedChange = { isEnabled ->
@@ -1920,7 +2137,7 @@ object TweakCommands {
     """.trimIndent()
 
     val POWER_LED_SCRIPT = """
-        #!/system/bin.sh
+        #!/system/bin/sh
 
         RED_LED="/sys/class/leds/red/brightness"
         GREEN_LED="/sys/class/leds/green/brightness"
@@ -1975,6 +2192,9 @@ object TweakCommands {
     const val SET_TRANSITION_VOID = "oculuspreferences --setc shell_immersive_transitions_enabled false\nam force-stop com.oculus.vrshell"
     const val ENABLE_INFINITE_PANELS = "oculuspreferences --setc debug_infinite_spatial_panels_enabled true\nam force-stop com.oculus.vrshell"
     const val DISABLE_INFINITE_PANELS = "oculuspreferences --setc debug_infinite_spatial_panels_enabled false\nam force-stop com.oculus.vrshell"
+    const val NO_CONTROLLER_KEY = "no_controller_requirement"
+    const val ENABLE_NO_CONTROLLER = "oculuspreferences --setc vrshell_skip_launchcheck_requires_controllers_enabled true\nam force-stop com.oculus.vrshell"
+    const val DISABLE_NO_CONTROLLER = "oculuspreferences --setc vrshell_skip_launchcheck_requires_controllers_enabled false\nam force-stop com.oculus.vrshell"
 
     // --- Anti TELEMETRY
     const val TELEMETRY_TOGGLE_KEY = "telemetry_toggle_enabled"

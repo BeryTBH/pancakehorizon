@@ -89,6 +89,9 @@ class TweakService : Service() {
         const val ACTION_START_GPU_MAX_FREQ = "com.veygax.eventhorizon.START_GPU_MAX_FREQ"
         const val ACTION_STOP_GPU_MAX_FREQ = "com.veygax.eventhorizon.STOP_GPU_MAX_FREQ"
         
+        const val ACTION_START_FRIDA = "com.veygax.eventhorizon.START_FRIDA"
+        const val ACTION_STOP_FRIDA = "com.veygax.eventhorizon.STOP_FRIDA"
+
         const val ACTION_STOP_ALL = "com.veygax.eventhorizon.STOP_ALL"
 
         const val ACTION_START_USB_INTERCEPTOR = "com.veygax.eventhorizon.START_USB_INTERCEPTOR"
@@ -113,6 +116,7 @@ class TweakService : Service() {
     private var isUsbInterceptorRunning = false
     private var isGpuMinFreqRunning: Boolean = false
     private var isGpuMaxFreqRunning: Boolean = false
+    private var isFridaRunning: Boolean = false
 
     
     // Files for scripts
@@ -137,7 +141,7 @@ class TweakService : Service() {
         gpuMaxFreqScriptFile = File(filesDir, GpuUtils.GPU_MAX_FREQ_SCRIPT_NAME)
 
         // Initialize state robustly on service creation (to catch scripts running from boot)
-        runBlocking(Dispatchers.IO) {
+        serviceScope.launch {
             checkRunningScripts()
         }
         
@@ -153,6 +157,7 @@ class TweakService : Service() {
         val runningInterceptor = RootUtils.runAsRoot("ps -ef | grep interceptor.sh | grep -v grep").trim().isNotEmpty()
         val runningGpuMin = RootUtils.runAsRoot("ps -ef | grep ${GpuUtils.GPU_MIN_FREQ_SCRIPT_NAME} | grep -v grep").trim().isNotEmpty()
         val runningGpuMax = RootUtils.runAsRoot("ps -ef | grep ${GpuUtils.GPU_MAX_FREQ_SCRIPT_NAME} | grep -v grep").trim().isNotEmpty()
+        val runningFrida = RootUtils.runAsRoot("ps -ef | grep frida-server | grep -v grep").trim().isNotEmpty()
 
         isRgbRunning = runningRgb
         isCustomLedRunning = runningCustom
@@ -160,6 +165,7 @@ class TweakService : Service() {
         isInterceptorRunning = runningInterceptor
         isGpuMinFreqRunning = runningGpuMin
         isGpuMaxFreqRunning = runningGpuMax
+        isFridaRunning = runningFrida
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -221,6 +227,14 @@ class TweakService : Service() {
                 ACTION_STOP_GPU_MAX_FREQ -> {
                     stopGpuMaxFreq()
                     sharedPrefs.edit().putBoolean("gpu_max_freq_is_running", false).apply()
+                }
+                ACTION_START_FRIDA -> {
+                    startFrida()
+                    sharedPrefs.edit().putBoolean("frida_is_running", true).apply()
+                }
+                ACTION_STOP_FRIDA -> {
+                    stopFrida()
+                    sharedPrefs.edit().putBoolean("frida_is_running", false).apply()
                 }
                 ACTION_APPLY_PASSTHROUGH_FIX -> {
                     applyPassthroughFix()
@@ -370,6 +384,20 @@ class TweakService : Service() {
         GpuUtils.setGpuMaxFreq("690000000")
     }
 
+    private suspend fun startFrida() {
+        RootUtils.runAsRoot("pkill -f frida-server || true")
+        RootUtils.runAsRoot("chmod 755 /data/local/tmp/frida-server")
+        isFridaRunning = true
+        serviceScope.launch {
+        RootUtils.runAsRoot("nohup /data/local/tmp/frida-server -D > /dev/null 2>&1 &")
+        }
+    }
+
+    private suspend fun stopFrida() {
+        RootUtils.runAsRoot("pkill -f frida-server >/dev/null 2>&1 || true")
+        isFridaRunning = false
+    }
+
     private fun applyPassthroughFix() {
         serviceScope.launch {
             if (RootUtils.isRootAvailable()) {
@@ -433,7 +461,7 @@ private suspend fun stopUsbInterceptor() {
     }
     
     private fun isAnyTweakRunning(): Boolean {
-        return isRgbRunning || isCustomLedRunning || isPowerLedRunning || isMinFreqRunning || isInterceptorRunning || isUsbInterceptorRunning || isGpuMinFreqRunning || isGpuMaxFreqRunning
+        return isRgbRunning || isCustomLedRunning || isPowerLedRunning || isMinFreqRunning || isInterceptorRunning || isUsbInterceptorRunning || isGpuMinFreqRunning || isGpuMaxFreqRunning || isFridaRunning
     }
     
     private suspend fun stopAllTweaksAndService() {
@@ -444,6 +472,7 @@ private suspend fun stopUsbInterceptor() {
         stopGpuMaxFreq()
         stopInterceptor()
         stopUsbInterceptor()
+        stopFrida()
 
         // Broadcast that all tweaks have been stopped before the service dies.
         // This allows the UI in TweaksActivity to update instantly.
@@ -506,7 +535,7 @@ private suspend fun stopUsbInterceptor() {
             .setContentText(contentText)
             .setSmallIcon(android.R.drawable.ic_lock_power_off) 
             .setPriority(NotificationCompat.PRIORITY_LOW)
-            .addAction(0, "Stop All Tweaks", stopPendingIntent)
+            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Stop All Tweaks", stopPendingIntent)
             .setOngoing(true) // Makes it non-swipeable/persistent
         
         // Use the highest available priority settings
@@ -533,6 +562,7 @@ private suspend fun stopUsbInterceptor() {
             putBoolean("min_freq_is_running", false)
             putBoolean("gpu_min_freq_is_running", false)
             putBoolean("gpu_max_freq_is_running", false)
+            putBoolean("frida_is_running", false)
             apply()
         }
 
@@ -544,6 +574,7 @@ private suspend fun stopUsbInterceptor() {
             RootUtils.runAsRoot("pkill -f ${GpuUtils.GPU_MIN_FREQ_SCRIPT_NAME} || true")
             RootUtils.runAsRoot("pkill -f ${GpuUtils.GPU_MAX_FREQ_SCRIPT_NAME} || true")
             RootUtils.runAsRoot("pkill -f interceptor.sh || true")
+            RootUtils.runAsRoot("pkill -f frida-server || true")
         }
     }
 
