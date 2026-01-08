@@ -155,6 +155,7 @@ class TweakService : Service() {
         val runningCustom = RootUtils.runAsRoot("ps -ef | grep custom_led.sh | grep -v grep").trim().isNotEmpty()
         val runningCpu = RootUtils.runAsRoot("ps -ef | grep ${CpuUtils.SCRIPT_NAME} | grep -v grep").trim().isNotEmpty()
         val runningInterceptor = RootUtils.runAsRoot("ps -ef | grep interceptor.sh | grep -v grep").trim().isNotEmpty()
+        val runningUsbInterceptor = RootUtils.runAsRoot("ps -ef | grep usb_interceptor.sh | grep -v grep").trim().isNotEmpty()
         val runningGpuMin = RootUtils.runAsRoot("ps -ef | grep ${GpuUtils.GPU_MIN_FREQ_SCRIPT_NAME} | grep -v grep").trim().isNotEmpty()
         val runningGpuMax = RootUtils.runAsRoot("ps -ef | grep ${GpuUtils.GPU_MAX_FREQ_SCRIPT_NAME} | grep -v grep").trim().isNotEmpty()
         val runningFrida = RootUtils.runAsRoot("ps -ef | grep frida-server | grep -v grep").trim().isNotEmpty()
@@ -163,6 +164,7 @@ class TweakService : Service() {
         isCustomLedRunning = runningCustom
         isMinFreqRunning = runningCpu
         isInterceptorRunning = runningInterceptor
+        isUsbInterceptorRunning = runningUsbInterceptor
         isGpuMinFreqRunning = runningGpuMin
         isGpuMaxFreqRunning = runningGpuMax
         isFridaRunning = runningFrida
@@ -559,6 +561,7 @@ private suspend fun stopUsbInterceptor() {
             putBoolean("custom_led_is_running", false)
             putBoolean("power_led_is_running", false)
             putBoolean("intercept_startup_apps", false)
+            putBoolean("usb_interceptor_running", false)
             putBoolean("min_freq_is_running", false)
             putBoolean("gpu_min_freq_is_running", false)
             putBoolean("gpu_max_freq_is_running", false)
@@ -574,6 +577,7 @@ private suspend fun stopUsbInterceptor() {
             RootUtils.runAsRoot("pkill -f ${GpuUtils.GPU_MIN_FREQ_SCRIPT_NAME} || true")
             RootUtils.runAsRoot("pkill -f ${GpuUtils.GPU_MAX_FREQ_SCRIPT_NAME} || true")
             RootUtils.runAsRoot("pkill -f interceptor.sh || true")
+            RootUtils.runAsRoot("pkill -f usb_interceptor.sh || true")
             RootUtils.runAsRoot("pkill -f frida-server || true")
         }
     }

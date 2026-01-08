@@ -67,6 +67,7 @@ object StatusChecks {
     private const val PREFIX_GPU_LOCK = "CHECK_GPU_LOCK:"
     private const val PREFIX_GPU_MAX_LOCK = "CHECK_GPU_MAX_LOCK:"
     private const val PREFIX_INTERCEPT = "CHECK_INTERCEPT:"
+    private const val PREFIX_USB_INTERCEPT = "CHECK_USB_INTERCEPT:"
     private const val PREFIX_CPU_GOV = "CHECK_CPU_GOV:"
     private const val PREFIX_ADB_PORT = "CHECK_ADB_PORT:"
     private const val PREFIX_ROOT_BLOCK = "CHECK_ROOT_BLOCK:"
@@ -89,6 +90,7 @@ object StatusChecks {
         echo "${PREFIX_GPU_LOCK}$(ps -ef | grep ${GpuUtils.GPU_MIN_FREQ_SCRIPT_NAME} | grep -v grep)"
         echo "${PREFIX_GPU_MAX_LOCK}$(ps -ef | grep ${GpuUtils.GPU_MAX_FREQ_SCRIPT_NAME} | grep -v grep)"
         echo "${PREFIX_INTERCEPT}$(ps -ef | grep interceptor.sh | grep -v grep)"
+        echo "${PREFIX_USB_INTERCEPT}$(ps -ef | grep usb_interceptor.sh | grep -v grep)"
 
         # System/Root States
         echo "${PREFIX_ROOT_BLOCK}$(mount | grep /system/etc/hosts)"
@@ -116,6 +118,7 @@ object StatusChecks {
         var isGpuMinFreqExecuting: Boolean = false,
         var isGpuMaxFreqExecuting: Boolean = false,
         var isInterceptorEnabled: Boolean = false,
+        var isUsbInterceptorEnabled: Boolean = false,
         var isRootBlockerManuallyEnabled: Boolean = false,
         var isCpuPerfMode: Boolean = false,
         var isWirelessAdbEnabled: Boolean = false,
@@ -159,6 +162,9 @@ object StatusChecks {
                     }
                     line.startsWith(PREFIX_INTERCEPT) -> {
                         states.isInterceptorEnabled = line.substringAfter(PREFIX_INTERCEPT).trim().isNotEmpty()
+                    }
+                    line.startsWith(PREFIX_USB_INTERCEPT) -> {
+                        states.isUsbInterceptorEnabled = line.substringAfter(PREFIX_USB_INTERCEPT).trim().isNotEmpty()
                     }
                     line.startsWith(PREFIX_ROOT_BLOCK) -> {
                         states.isRootBlockerManuallyEnabled = line.substringAfter(PREFIX_ROOT_BLOCK).trim().isNotEmpty()
@@ -561,7 +567,9 @@ fun TweaksScreen(
     var cycleWifiOnBoot by rememberSaveable { mutableStateOf(getInitialState("cycle_wifi_on_boot")) }
 
     // Usb Interceptor
-    val usbInterceptorEnabled = remember { mutableStateOf(getInitialState("usb_interceptor_on_boot")) }
+    val initialUsbInterceptorState = getInitialState("usb_interceptor_running")
+    var isUsbInterceptorEnabled by remember { mutableStateOf(sharedPrefs.getBoolean("usb_interceptor_running", false)) }
+    var usbInterceptorOnBoot by rememberSaveable { mutableStateOf(getInitialState("usb_interceptor_on_boot")) }
 
     // Proximity Sensor
     val initialProxSensorDisabledState = getInitialState("prox_sensor_disabled")
@@ -599,12 +607,14 @@ fun TweaksScreen(
             override fun onReceive(context: Context?, intent: Intent?) {
                 if (intent?.action == TweakService.BROADCAST_TWEAKS_STOPPED) {
                     isRainbowLedActive = false
+                    isPowerLedActive = false
                     isCustomLedActive = false
                     isMinFreqExecuting = false
                     isGpuMinFreqRunning = false
                     isGpuMaxFreqRunning = false
                     isInterceptorEnabled = false
-                    isPowerLedActive = false
+                    isUsbInterceptorEnabled = false
+                    isFridaServerRunning = false
                 }
             }
         }
@@ -664,6 +674,7 @@ fun TweaksScreen(
                             isGpuMinFreqRunning = states.isGpuMinFreqExecuting
                             isGpuMaxFreqRunning = states.isGpuMaxFreqExecuting
                             isInterceptorEnabled = states.isInterceptorEnabled
+                            isUsbInterceptorEnabled = states.isUsbInterceptorEnabled
                             isRootBlockerManuallyEnabled = states.isRootBlockerManuallyEnabled
                             isCpuPerfMode = states.isCpuPerfMode
                             isWirelessAdbEnabled = states.isWirelessAdbEnabled
@@ -752,6 +763,7 @@ fun TweaksScreen(
                     putBoolean("gpu_min_freq_is_running", states.isGpuMinFreqExecuting)
                     putBoolean("gpu_max_freq_is_running", states.isGpuMaxFreqExecuting)
                     putBoolean("intercept_startup_apps", states.isInterceptorEnabled)
+                    putBoolean("usb_interceptor_running", states.isUsbInterceptorEnabled)
                     putBoolean("root_blocker_is_running", states.isRootBlockerManuallyEnabled)
                     putBoolean("wireless_adb_is_running", states.isWirelessAdbEnabled)
                     putBoolean("lock_update_folders_is_locked", states.areUpdateFoldersLocked)
@@ -771,6 +783,7 @@ fun TweaksScreen(
                 isGpuMinFreqRunning = states.isGpuMinFreqExecuting
                 isGpuMaxFreqRunning = states.isGpuMaxFreqExecuting
                 isInterceptorEnabled = states.isInterceptorEnabled
+                isUsbInterceptorEnabled = states.isUsbInterceptorEnabled
                 isRootBlockerManuallyEnabled = states.isRootBlockerManuallyEnabled
                 isCpuPerfMode = states.isCpuPerfMode
                 isWirelessAdbEnabled = states.isWirelessAdbEnabled
@@ -1370,26 +1383,22 @@ fun TweaksScreen(
                                 }
                             }
                             item {
-                                TweakCard(
-                                    title = "USB Notification Interceptor",
-                                    description = "Listens for the Oculus MTP notification and turns on MTP mode"
-                                ) {
+                                TweakCard("USB Interceptor", "Automatically enables MTP when USB is connected") {
                                     Switch(
-                                        checked = usbInterceptorEnabled.value,
+                                        checked = isUsbInterceptorEnabled,
                                         onCheckedChange = { isEnabled ->
-                                            usbInterceptorEnabled.value = isEnabled
-                                            sharedPrefs.edit().putBoolean("usb_interceptor_on_boot", isEnabled).apply()
+                                            isUsbInterceptorEnabled = isEnabled
+                                            sharedPrefs.edit().putBoolean("usb_interceptor_running", isEnabled).apply()
+                                            
                                             coroutineScope.launch(Dispatchers.IO) {
                                                 if (isEnabled) {
                                                     activity.startTweakServiceAction(TweakService.ACTION_START_USB_INTERCEPTOR)
-                                                    withContext(Dispatchers.Main) {
-                                                        showSnack("USB Interceptor Enabled")
-                                                    }
                                                 } else {
                                                     activity.startTweakServiceAction(TweakService.ACTION_STOP_USB_INTERCEPTOR)
-                                                    withContext(Dispatchers.Main) {
-                                                        showSnack("USB Interceptor Disabled")
-                                                    }
+                                                }
+                                                
+                                                withContext(Dispatchers.Main) {
+                                                    showSnack(if (isEnabled) "USB Interceptor Enabled" else "USB Interceptor Disabled")
                                                 }
                                             }
                                         },
