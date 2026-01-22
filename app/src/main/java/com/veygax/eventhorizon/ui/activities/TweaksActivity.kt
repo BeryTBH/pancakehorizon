@@ -350,6 +350,23 @@ class TweaksActivity : ComponentActivity() {
             RootUtils.runAsRoot(commands, useMountMaster = true)
     }
 
+    fun extractZygiskAsset(context: Context): String? {
+        val assetName = "exploit/Zygisk.ko"
+        val tempFile = File(context.cacheDir, "Zygisk.ko")
+    
+        return try {
+            context.assets.open(assetName).use { input ->
+                tempFile.outputStream().use { output ->
+                    input.copyTo(output)
+                }
+            }
+            tempFile.absolutePath
+        } catch (e: Exception) {
+            Log.e("TweaksActivity", "Failed to extract asset: ${e.message}")
+            null
+        }
+    }
+
     fun launchCustomColorPicker() {
         justLaunchedCustomLed = true
         ledColorLauncher.launch(Intent(this, LedColorActivity::class.java))
@@ -1335,21 +1352,26 @@ fun TweaksScreen(
                             item {
                                 TweakCard(
                                     title = "Fix Magisk Zygisk",
-                                    description = "Soft reboots device to enable Zygisk runtime in Magisk"
+                                    description = "Clears kernel memory by causing a kernel panic. Please hold power button to reboot."
                                 ) {
                                     Button(
                                         onClick = {
-                                            coroutineScope.launch {
-                                                showSnack("Restarting Zygisk…")
-                            
+                                            coroutineScope.launch {               
                                                 withContext(Dispatchers.IO) {
-                                                    RootUtils.runAsRoot(
-                                                        """
-                                                        magisk --zygote-restart
-                                                        runcon u:r:init:s0 stop && start
-                                                        """.trimIndent(),
-                                                        useMountMaster = true
-                                                    )
+                                                    val tempPath = activity.extractZygiskAsset(context)
+                                                    if (tempPath != null) {
+                                                        val ehFolder = "/data/adb/eventhorizon"
+                                                        val targetPath = "$ehFolder/Zygisk.ko"
+                                                        
+                                                        val script = """
+                                                            mkdir -p $ehFolder
+                                                            cp $tempPath $targetPath
+                                                            chmod +x $targetPath
+                                                            insmod $targetPath
+                                                        """.trimIndent()
+                                                        
+                                                        RootUtils.runAsRoot(script, useMountMaster = true)
+                                                    }
                                                 }
                                             }
                                         },
