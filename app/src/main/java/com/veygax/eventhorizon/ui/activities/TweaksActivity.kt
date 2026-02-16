@@ -331,23 +331,28 @@ class TweaksActivity : ComponentActivity() {
         }
     }
 
-    suspend fun copyTelemetryBinaryFromAssets(context: Context) = withContext(Dispatchers.IO) {
-            val assetPath = "telemetry/telemetry"
-            val tempFile = File(context.cacheDir, "telemetry_temp")
-            context.assets.open(assetPath).use { input ->
-                tempFile.outputStream().use { output ->
-                    input.copyTo(output)
-                }
-            }
+    suspend fun copyTelemetryAssets(context: Context) = withContext(Dispatchers.IO) {
+        val moduleDir = "/data/adb/eventhorizon"
+        val commands = StringBuilder("mkdir -p $moduleDir\n")
+        val filesToCopy = listOf("telemetry", "telemetry.rc", "fflogger_event_store.sql")
 
-            val moduleDir = "/data/adb/eventhorizon"
-            val finalBinaryPath = "$moduleDir/telemetry"
-            val commands = """
-                mkdir -p $moduleDir
-                mv ${tempFile.absolutePath} $finalBinaryPath
-                chmod 755 $finalBinaryPath
-            """.trimIndent()
-            RootUtils.runAsRoot(commands, useMountMaster = true)
+        filesToCopy.forEach { fileName ->
+            val assetPath = "telemetry/$fileName"
+            val tempFile = File(context.cacheDir, "${fileName}_temp")
+            try {
+                context.assets.open(assetPath).use { input ->
+                    tempFile.outputStream().use { output ->
+                        input.copyTo(output)
+                    }
+                }
+                commands.append("mv ${tempFile.absolutePath} $moduleDir/$fileName\n")
+                val perms = if (fileName == "telemetry") "755" else "644"
+                commands.append("chmod $perms $moduleDir/$fileName\n")
+            } catch (e: Exception) {
+                Log.e("Telemetry", "Failed to extract asset: $fileName", e)
+            }
+        }
+        RootUtils.runAsRoot(commands.toString(), useMountMaster = true)
     }
 
     fun extractZygiskAsset(context: Context): String? {
@@ -1442,7 +1447,7 @@ fun TweaksScreen(
                                             coroutineScope.launch(Dispatchers.IO) {
                                                 if (isRooted) {
                                                     if (isEnabled) {
-                                                        activity.copyTelemetryBinaryFromAssets(context)
+                                                        activity.copyTelemetryAssets(context)
                                                         RootUtils.runAsRoot(TweakCommands.ENABLE_TELEMETRY_DISABLE, useMountMaster = true)
                                                         withContext(Dispatchers.Main) {
                                                             showSnack("Telemetry Disabled")
@@ -2232,11 +2237,31 @@ object TweakCommands {
     const val ENABLE_TELEMETRY_DISABLE = """
         mount -o bind /data/adb/eventhorizon/telemetry /system_ext/bin/crashtelemetry
         mount -o bind /data/adb/eventhorizon/telemetry /system_ext/bin/telemetry
+        mount -o bind /data/adb/eventhorizon/telemetry /system_ext/bin/wifitelemetry
+        mount -o bind /data/adb/eventhorizon/telemetry.rc /system_ext/etc/init/crashtelemetry.rc
+        mount -o bind /data/adb/eventhorizon/telemetry.rc /system_ext/etc/init/telemetry.rc
+        mount -o bind /data/adb/eventhorizon/telemetry.rc /system_ext/etc/init/wifitelemetry.rc
+        mount -o bind /data/adb/eventhorizon/telemetry.rc /system_ext/etc/init/vendor.oculus.hardware.telemetry@1.0-service.rc
+        setprop ctl.stop crashtelemetry
+        setprop ctl.stop telemetry
+        setprop ctl.stop wifitelemetry
+        setprop ctl.stop oculus-hardware-telemetry-1-0
+        stop crashtelemetry
+        stop telemetry
+        stop wifitelemetry
+        stop oculus-hardware-telemetry-1-0
+        cp /data/adb/eventhorizon/fflogger_event_store.sql /data/oculus/telemetry/fflogger_event_store.sql
+        chmod 400 /data/oculus/telemetry/fflogger_event_store.sql
     """
 
     const val DISABLE_TELEMETRY_DISABLE = """
-        umount -l /system_ext/bin/crashtelemetry || true
-        umount -l /system_ext/bin/telemetry || true
+    	umount -l /system_ext/bin/crashtelemetry || true
+    	umount -l /system_ext/bin/telemetry || true
+    	umount -l /system_ext/etc/init/crashtelemetry.rc || true
+    	umount -l /system_ext/etc/init/telemetry.rc || true
+    	umount -l /system_ext/etc/init/wifitelemetry.rc || true
+    	umount -l /system_ext/etc/init/vendor.oculus.hardware.telemetry@1.0-service.rc || true
+    	chmod 600 /data/oculus/telemetry/fflogger_event_store.sql
     """
 }
 

@@ -14,6 +14,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import android.util.Log
 
@@ -248,31 +249,36 @@ class BootReceiver : BroadcastReceiver() {
             }
 
             // --- Telemetry Disable on Boot Logic ---
-            suspend fun copyTelemetryBinaryFromAssets(context: Context) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                    val assetPath = "telemetry/telemetry"
-                    val tempFile = File(context.cacheDir, "telemetry_temp")
-                    context.assets.open(assetPath).use { input ->
-                        tempFile.outputStream().use { output ->
-                            input.copyTo(output)
-                        }
-                    }
-
-                    val moduleDir = "/data/adb/eventhorizon"
-                    val finalBinaryPath = "$moduleDir/telemetry"
-                    val commands = """
-                        mkdir -p $moduleDir
-                        mv ${tempFile.absolutePath} $finalBinaryPath
-                        chmod 755 $finalBinaryPath
-                    """.trimIndent()
-                    RootUtils.runAsRoot(commands, useMountMaster = true)
+            suspend fun copyTelemetryAssets(context: Context) = withContext(Dispatchers.IO) {
+            	val moduleDir = "/data/adb/eventhorizon"
+            	val commands = StringBuilder("mkdir -p $moduleDir\n")
+            	val filesToCopy = listOf("telemetry", "telemetry.rc", "fflogger_event_store.sql")
+            
+            	filesToCopy.forEach { fileName ->
+            		val assetPath = "telemetry/$fileName"
+            		val tempFile = File(context.cacheDir, "${fileName}_temp")
+            		try {
+            			context.assets.open(assetPath).use { input ->
+            				tempFile.outputStream().use { output ->
+            					input.copyTo(output)
+            				}
+            			}
+            			commands.append("mv ${tempFile.absolutePath} $moduleDir/$fileName\n")
+            			val perms = if (fileName == "telemetry") "755" else "644"
+            			commands.append("chmod $perms $moduleDir/$fileName\n")
+            		} catch (e: Exception) {
+            			Log.e("Telemetry", "Failed to extract asset: $fileName", e)
+            		}
+            	}
+            	RootUtils.runAsRoot(commands.toString(), useMountMaster = true)
             }
             if (telemetryDisabledOnBoot) {
-                scope.launch(Dispatchers.IO) {
-                    if (RootUtils.isRootAvailable()) {
-                        copyTelemetryBinaryFromAssets(context)
-                        RootUtils.runAsRoot(TweakCommands.ENABLE_TELEMETRY_DISABLE, useMountMaster = true)
-                    }
-                }
+            	scope.launch(Dispatchers.IO) {
+            		if (RootUtils.isRootAvailable()) {
+                        copyTelemetryAssets(context)
+            			RootUtils.runAsRoot(TweakCommands.ENABLE_TELEMETRY_DISABLE, useMountMaster = true)
+            		}
+            	}
             }
 
             // --- Passthrough Fix on Boot Logic ---
