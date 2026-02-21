@@ -1415,7 +1415,11 @@ fun TweaksScreen(
                                         checked = isUsbInterceptorEnabled,
                                         onCheckedChange = { isEnabled ->
                                             isUsbInterceptorEnabled = isEnabled
-                                            sharedPrefs.edit().putBoolean("usb_interceptor_running", isEnabled).apply()
+
+                                            sharedPrefs.edit()
+                                                .putBoolean("usb_interceptor_running", isEnabled)
+                                                .putBoolean("usb_interceptor_on_boot", isEnabled)
+                                                .apply()
                                             
                                             coroutineScope.launch(Dispatchers.IO) {
                                                 if (isEnabled) {
