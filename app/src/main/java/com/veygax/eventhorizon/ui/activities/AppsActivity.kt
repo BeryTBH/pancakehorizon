@@ -31,6 +31,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.veygax.eventhorizon.core.AppInstaller
+import com.veygax.eventhorizon.core.UpdateManager
 import com.veygax.eventhorizon.utils.RootUtils
 import kotlinx.coroutines.launch
 import android.util.Log
@@ -42,14 +43,27 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.ui.viewinterop.AndroidView
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
+import java.net.HttpURLConnection
+import java.net.URL
 
-// --- Data class to organize app information ---
+// --- Data classes to organize app information and state ---
 data class AppInfo(
     val title: String,
     val description: String,
     val packageName: String,
     val installAction: suspend (Context, (String) -> Unit, Uri?) -> Unit,
-    val type: AppInstallType = AppInstallType.AUTOMATIC
+    val type: AppInstallType = AppInstallType.AUTOMATIC,
+    val githubOwner: String? = null,
+    val githubRepo: String? = null
+)
+
+data class AppItemState(
+    val status: String,
+    val isProcessing: Boolean,
+    val currentVersion: String? = null,
+    val hasUpdate: Boolean = false,
+    val latestVersion: String? = null
 )
 
 enum class AppInstallType {
@@ -79,12 +93,32 @@ class AppsActivity : ComponentActivity() {
     }
 }
 
+// Helper function to get installed app version (returns null if not installed)
+fun getInstalledVersion(packageName: String, packageManager: android.content.pm.PackageManager): String? {
+    return try {
+        val pInfo = packageManager.getPackageInfo(packageName, 0)
+        pInfo.versionName
+    } catch (e: android.content.pm.PackageManager.NameNotFoundException) {
+        null
+    }
+}
+
+// NEW: Helper to clean up messy version strings for comparison and UI
+fun sanitizeVersionString(version: String?): String? {
+    if (version == null) return null
+    return version
+        .substringBefore(".r") // Fixes Shizuku
+        .substringBefore("_B") // Fixes MiXplorer
+        .substringBefore("-")  // Fixes Beta tags
+}
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun AppsScreen() {
     val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
     val activity = context as? Activity
+    val packageManager = context.packageManager
     val sharedPrefs = remember { context.getSharedPreferences("eventhorizon_prefs", Context.MODE_PRIVATE) }
     var selectedAppToInstall: AppInfo? by remember { mutableStateOf(null) }
     var showSideloadedAppDialog by remember { mutableStateOf(false) }
@@ -112,7 +146,6 @@ fun AppsScreen() {
             AppInstaller.installFromUri(ctx, fileUri, "Local APK", onStatus)
         } ?: onStatus("Error: File not found")
     }
-    val defaultInstallAction: suspend (Context, (String) -> Unit, Uri?) -> Unit = { ctx, onStatus, _ ->}
 
     // --- List of apps to be displayed ---
     val appList = listOf(
@@ -127,6 +160,8 @@ fun AppsScreen() {
             title = "App Manager",
             description = "A full-featured package manager and viewer for Android",
             packageName = "io.github.muntashirakon.AppManager",
+            githubOwner = "MuntashirAkon",
+            githubRepo = "AppManager",
             installAction = { ctx, onStatus, _ ->
                 AppInstaller.downloadAndInstall(ctx, "MuntashirAkon", "AppManager", onStatus)
             }
@@ -135,6 +170,8 @@ fun AppsScreen() {
             title = "Dock Editor",
             description = "A simple tool for the Quest 3/3s that allows you to edit the pinned applications on the dock",
             packageName = "com.lumi.dockeditor",
+            githubOwner = "Lumince",
+            githubRepo = "DockEditor",
             installAction = { ctx, onStatus, _ ->
                 AppInstaller.downloadAndInstall(ctx, "Lumince", "DockEditor", onStatus)
             }
@@ -143,6 +180,8 @@ fun AppsScreen() {
             title = "Shizuku",
             description = "Lets other apps use system-level features by giving them elevated permissions",
             packageName = "moe.shizuku.privileged.api",
+            githubOwner = "RikkaApps",
+            githubRepo = "Shizuku",
             installAction = { ctx, onStatus, _ ->
                 AppInstaller.downloadAndInstall(ctx, "RikkaApps", "Shizuku", onStatus)
             }
@@ -151,18 +190,75 @@ fun AppsScreen() {
             title = "MiXplorer",
             description = "Root File Explorer",
             packageName = "com.mixplorer",
+            githubOwner = "driftywinds",
+            githubRepo = "mixplorer-releases",
             installAction = { ctx, onStatus, _ ->
                 AppInstaller.downloadAndInstall(ctx, "driftywinds", "mixplorer-releases", onStatus)
             }
         )
     )
 
+    // Detect installation status on initialization
     val appStates = remember {
-        mutableStateMapOf<String, Pair<String, Boolean>>().apply {
+        mutableStateMapOf<String, AppItemState>().apply {
             appList.forEach { app ->
-                this[app.packageName] = Pair("Ready", false)
+                // Use the sanitizer here
+                val version = sanitizeVersionString(getInstalledVersion(app.packageName, packageManager))
+                val statusText = if (version != null) "Installed (v$version)" else "Ready"
+                this[app.packageName] = AppItemState(status = statusText, isProcessing = false, currentVersion = version)
             }
         }
+    }
+
+    // Check for updates on GitHub in the background
+    LaunchedEffect(Unit) {
+        withContext(Dispatchers.IO) {
+            appList.forEach { app ->
+                val owner = app.githubOwner
+                val repo = app.githubRepo
+                val currentVer = appStates[app.packageName]?.currentVersion
+
+                if (owner != null && repo != null && currentVer != null) {
+                    try {
+                        val apiUrl = "https://api.github.com/repos/$owner/$repo/releases/latest"
+                        val url = URL(apiUrl)
+                        val connection = url.openConnection() as HttpURLConnection
+                        connection.connectTimeout = 10000
+                        connection.readTimeout = 10000
+                        val jsonText = connection.inputStream.bufferedReader().readText()
+                        connection.disconnect()
+
+                        val json = JSONObject(jsonText)
+                        // Sanitize the tag pulled from GitHub
+                        val latestVersion = sanitizeVersionString(json.getString("tag_name"))!!
+
+                        if (UpdateManager.isNewerVersion(latestVersion, currentVer)) {
+                            withContext(Dispatchers.Main) {
+                                appStates[app.packageName] = appStates[app.packageName]!!.copy(
+                                    hasUpdate = true,
+                                    latestVersion = latestVersion,
+                                    status = "Update Available ($latestVersion)"
+                                )
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Log.e("AppsActivity", "Failed to check update for ${app.title}: ${e.message}")
+                    }
+                }
+            }
+        }
+    }
+
+    // Helper to refresh installation status after action
+    val refreshStatus: (String) -> Unit = { packageName ->
+        val version = getInstalledVersion(packageName, packageManager)
+        val statusText = if (version != null) "Installed (v$version)" else "Ready"
+        appStates[packageName] = appStates[packageName]?.copy(
+            status = statusText,
+            isProcessing = false,
+            currentVersion = version,
+            hasUpdate = false // Reset update flag after install/update
+        ) ?: AppItemState(status = statusText, isProcessing = false, currentVersion = version)
     }
 
     val apkPickerLauncher = rememberLauncherForActivityResult(
@@ -172,12 +268,13 @@ fun AppsScreen() {
             selectedAppToInstall?.let { appInfo ->
                 val packageName = appInfo.packageName
 
-                appStates[packageName] = Pair("Starting Installation...", true)
+                appStates[packageName] = appStates[packageName]!!.copy(status = "Starting Installation...", isProcessing = true)
                 coroutineScope.launch {
                     appInfo.installAction(context, { newStatus ->
-                        appStates[packageName] = Pair(newStatus, true)
+                        appStates[packageName] = appStates[packageName]!!.copy(status = newStatus, isProcessing = true)
                     }, fileUri)
-                    appStates[packageName] = Pair(appStates[packageName]?.first ?: "Done", false)
+                    // Refresh status after local APK install
+                    refreshStatus(packageName)
                 }
             }
         }
@@ -380,8 +477,12 @@ fun AppsScreen() {
 
                         1 -> {
                             items(appList) { app ->
-                                val status = appStates[app.packageName]?.first ?: "Ready"
-                                val isInstalling = appStates[app.packageName]?.second ?: false
+                                val state = appStates[app.packageName] ?: AppItemState("Ready", false)
+                                val isInstalling = state.isProcessing
+                                val isInstalled = state.currentVersion != null
+                                val hasUpdate = state.hasUpdate
+                                val status = state.status
+                            
                                 AppCard(
                                     title = app.title,
                                     description = app.description,
@@ -389,22 +490,39 @@ fun AppsScreen() {
                                 ) {
                                     val buttonText = when {
                                         isInstalling -> "Processing..."
+                                        hasUpdate -> "Update"
+                                        isInstalled -> "Launch"
                                         app.type == AppInstallType.MANUAL_LINK -> "Open Link"
                                         app.type == AppInstallType.FILE_PICKER -> "Select"
                                         else -> "Install"
                                     }
+
                                     Button(
                                         onClick = {
-                                            if (app.type == AppInstallType.FILE_PICKER) {
+                                            if (isInstalled && !hasUpdate) {
+                                                coroutineScope.launch {
+                                                    val launchIntent = packageManager.getLaunchIntentForPackage(app.packageName)
+                                                    if (launchIntent != null) {
+                                                        context.startActivity(launchIntent)
+                                                    } else {
+                                                        // Fallback: Use root to force-launch via monkey (useful for Quest system apps)
+                                                        withContext(Dispatchers.IO) {
+                                                            RootUtils.runAsRoot("monkey -p ${app.packageName} -c android.intent.category.LAUNCHER 1")
+                                                        }
+                                                    }
+                                                }
+                                            } else if (app.type == AppInstallType.FILE_PICKER) {
                                                 selectedAppToInstall = app
                                                 apkPickerLauncher.launch("*/*")
                                             } else {
-                                                appStates[app.packageName] = Pair("Starting...", true)
+                                                // Standard Install/Update Logic
+                                                appStates[app.packageName] = state.copy(status = "Starting...", isProcessing = true)
                                                 coroutineScope.launch {
                                                     app.installAction(context, { newStatus ->
-                                                        appStates[app.packageName] = Pair(newStatus, true)
+                                                        appStates[app.packageName] = appStates[app.packageName]!!.copy(status = newStatus, isProcessing = true)
                                                     }, null)
-                                                    appStates[app.packageName] = Pair(appStates[app.packageName]?.first ?: "Done", false)
+                                                    // Refresh status after direct install action
+                                                    refreshStatus(app.packageName)
                                                 }
                                             }
                                         },
@@ -696,7 +814,7 @@ fun AppCard(title: String, description: String, status: String, content: @Compos
             Text(
                 text = "Status: $status",
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = if (status.startsWith("Installed")) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
     }

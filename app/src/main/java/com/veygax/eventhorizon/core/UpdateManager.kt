@@ -110,22 +110,29 @@ object UpdateManager {
 	    }
 	}
 
-    fun isNewerVersion(latestVersion: String, currentVersion: String): Boolean {
-        val cleanLatest = latestVersion.removePrefix("v").split(".").mapNotNull { it.toIntOrNull() }
-        val cleanCurrent = currentVersion.removePrefix("v").split(".").mapNotNull { it.toIntOrNull() }
-
-        if (cleanLatest.isEmpty() || cleanCurrent.isEmpty()) return false
-
-        val maxLen = maxOf(cleanLatest.size, cleanCurrent.size)
-        for (i in 0 until maxLen) {
-            val latestPart = cleanLatest.getOrElse(i) { 0 }
-            val currentPart = cleanCurrent.getOrElse(i) { 0 }
-            if (latestPart > currentPart) return true
-            if (latestPart < currentPart) return false
-        }
-        return false // Versions are identical
-    }
-
+	private fun sanitizeVersion(version: String): String {
+		return version
+	    	.removePrefix("v")
+	    	.substringBefore(".r") // Fixes Shizuku
+	    	.substringBefore("_B") // Fixes MiXplorer
+	    	.substringBefore("-")  // Fixes Beta tags
+	}
+	
+	fun isNewerVersion(latestVersion: String, currentVersion: String): Boolean {
+	    val cleanLatest = sanitizeVersion(latestVersion).split(".").mapNotNull { it.toIntOrNull() }
+	    val cleanCurrent = sanitizeVersion(currentVersion).split(".").mapNotNull { it.toIntOrNull() }
+	
+	    if (cleanLatest.isEmpty() || cleanCurrent.isEmpty()) return false
+	
+	    val maxLen = maxOf(cleanLatest.size, cleanCurrent.size)
+	    for (i in 0 until maxLen) {
+	        val latestPart = cleanLatest.getOrElse(i) { 0 }
+	        val currentPart = cleanCurrent.getOrElse(i) { 0 }
+	        if (latestPart > currentPart) return true
+	        if (latestPart < currentPart) return false
+	    }
+	    return false 
+	}
 
     /**
      * Downloads an APK from a URL and installs it using root.
