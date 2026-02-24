@@ -124,6 +124,14 @@ fun AppsScreen() {
             installAction = localApkInstallAction
         ),
         AppInfo(
+            title = "App Manager",
+            description = "A full-featured package manager and viewer for Android",
+            packageName = "io.github.muntashirakon.AppManager",
+            installAction = { ctx, onStatus, _ ->
+                AppInstaller.downloadAndInstall(ctx, "MuntashirAkon", "AppManager", onStatus)
+            }
+        ),
+        AppInfo(
             title = "Dock Editor",
             description = "A simple tool for the Quest 3/3s that allows you to edit the pinned applications on the dock",
             packageName = "com.lumi.dockeditor",
