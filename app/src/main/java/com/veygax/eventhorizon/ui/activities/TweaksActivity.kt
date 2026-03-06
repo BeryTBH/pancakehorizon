@@ -2261,6 +2261,7 @@ object TweakCommands {
     const val DISABLE_TELEMETRY_DISABLE = """
     	umount -l /system_ext/bin/crashtelemetry || true
     	umount -l /system_ext/bin/telemetry || true
+        umount -l /system_ext/bin/wifitelemetry || true
     	umount -l /system_ext/etc/init/crashtelemetry.rc || true
     	umount -l /system_ext/etc/init/telemetry.rc || true
     	umount -l /system_ext/etc/init/wifitelemetry.rc || true
