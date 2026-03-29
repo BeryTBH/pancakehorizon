@@ -438,35 +438,33 @@ class TweakService : Service() {
         isFridaRunning = false
     }
 
-    private fun applyPassthroughFix() {
-        serviceScope.launch {
-            if (RootUtils.isRootAvailable()) {
-                val fixCommand = """
-                    am force-stop com.oculus.guardian
-					am force-stop com.oculus.vrshell
-                    sleep 5
-                    am start -n com.veygax.eventhorizon/.ui.activities.MainActivity
-                """.trimIndent()
-
-                RootUtils.runAsRoot(fixCommand, useMountMaster = true)
-                val prefs = getSharedPreferences("eventhorizon_prefs", Context.MODE_PRIVATE)
-                val passthroughFixOnBoot = prefs.getBoolean("passthrough_fix_on_boot", false)
-                val appToLaunch = prefs.getString("start_app_on_boot", null)
-
-                if (passthroughFixOnBoot && !appToLaunch.isNullOrEmpty()) {
-                    val ehIntent = packageManager.getLaunchIntentForPackage("com.veygax.eventhorizon")
-                    ehIntent?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    if (ehIntent != null) startActivity(ehIntent)
-
-                    try {
-                        val appIntent = packageManager.getLaunchIntentForPackage(appToLaunch)
-                        if (appIntent != null) {
-                            appIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                            startActivity(appIntent)
-                        }
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Failed to launch $appToLaunch", e)
+    private suspend fun applyPassthroughFix() {
+        if (RootUtils.isRootAvailable()) {
+            val fixCommand = """
+                am force-stop com.oculus.guardian
+                am force-stop com.oculus.vrshell
+                sleep 5
+                am start -n com.veygax.eventhorizon/.ui.activities.MainActivity
+            """.trimIndent()
+    
+            RootUtils.runAsRoot(fixCommand, useMountMaster = true)
+            val prefs = getSharedPreferences("eventhorizon_prefs", Context.MODE_PRIVATE)
+            val passthroughFixOnBoot = prefs.getBoolean("passthrough_fix_on_boot", false)
+            val appToLaunch = prefs.getString("start_app_on_boot", null)
+    
+            if (passthroughFixOnBoot && !appToLaunch.isNullOrEmpty()) {
+                val ehIntent = packageManager.getLaunchIntentForPackage("com.veygax.eventhorizon")
+                ehIntent?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                if (ehIntent != null) startActivity(ehIntent)
+    
+                try {
+                    val appIntent = packageManager.getLaunchIntentForPackage(appToLaunch)
+                    if (appIntent != null) {
+                        appIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        startActivity(appIntent)
                     }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to launch $appToLaunch", e)
                 }
             }
         }
