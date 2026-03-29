@@ -117,7 +117,6 @@ class TweakService : Service() {
     private var isGpuMinFreqRunning: Boolean = false
     private var isGpuMaxFreqRunning: Boolean = false
     private var isFridaRunning: Boolean = false
-
     
     // Files for scripts
     private lateinit var rgbScriptFile: File
@@ -456,12 +455,12 @@ class TweakService : Service() {
         updateServiceState()
     }
 
-private suspend fun stopUsbInterceptor() {
+    private suspend fun stopUsbInterceptor() {
         RootUtils.runAsRoot("pkill -f usb_interceptor.sh || true")
         isUsbInterceptorRunning = false
         updateServiceState()
     }
-    
+
     private fun isAnyTweakRunning(): Boolean {
         return isRgbRunning || isCustomLedRunning || isPowerLedRunning || isMinFreqRunning || isInterceptorRunning || isUsbInterceptorRunning || isGpuMinFreqRunning || isGpuMaxFreqRunning || isFridaRunning
     }

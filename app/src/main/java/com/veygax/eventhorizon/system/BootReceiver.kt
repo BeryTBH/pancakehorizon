@@ -23,6 +23,7 @@ class BootReceiver : BroadcastReceiver() {
         if (intent.action == Intent.ACTION_BOOT_COMPLETED) {
             val sharedPrefs = context.getSharedPreferences("eventhorizon_prefs", Context.MODE_PRIVATE)
             val rootOnBoot = sharedPrefs.getBoolean("root_on_boot", false)
+            val startOnBoot = sharedPrefs.getBoolean("start_on_boot", false)
             val blockerOnBoot = sharedPrefs.getBoolean("blocker_on_boot", false)
             val rainbowLedOnBoot = sharedPrefs.getBoolean("rgb_on_boot", false)
             val customLedOnBoot = sharedPrefs.getBoolean("custom_led_on_boot", false)
@@ -55,6 +56,10 @@ class BootReceiver : BroadcastReceiver() {
                     startIntent.putExtra("auto_root", true)
                     shouldStartActivity = true
                 }
+            }
+
+            if (startOnBoot) {
+                shouldStartActivity = true
             }
             
             if (blockerOnBoot) {

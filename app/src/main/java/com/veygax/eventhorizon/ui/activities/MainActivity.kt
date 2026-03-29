@@ -102,6 +102,22 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    suspend fun checkBootloaderState(sharedPrefs: android.content.SharedPreferences): Boolean = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        if (sharedPrefs.getBoolean("is_unlocked_bootloader", false)) return@withContext true
+        
+        try {
+            val process = Runtime.getRuntime().exec("getprop ro.boot.verifiedbootstate")
+            val state = process.inputStream.bufferedReader().readText().trim()
+            if (state == "orange") {
+                sharedPrefs.edit().putBoolean("is_unlocked_bootloader", true).apply()
+                return@withContext true
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("MainActivity", "Failed to check bootloader state", e)
+        }
+        return@withContext false
+    }
+
     fun isPatched(): Boolean {
         val lastVersion = lastVersionForDevice()
         if (lastVersion == 0L) {
@@ -196,7 +212,9 @@ fun EventHorizonApp(
     val sharedPrefs = remember { context.getSharedPreferences("eventhorizon_prefs", Context.MODE_PRIVATE) }
     val coroutineScope = rememberCoroutineScope()
 
+    var isUnlockedBootloader by remember { mutableStateOf(sharedPrefs.getBoolean("is_unlocked_bootloader", false)) }
     var rootOnBoot by remember { mutableStateOf(sharedPrefs.getBoolean("root_on_boot", false)) }
+    var startOnBoot by remember { mutableStateOf(sharedPrefs.getBoolean("start_on_boot", false)) }
     var consoleText by remember { mutableStateOf("") }
     val scrollState = rememberScrollState()
     var isProcessRunning by remember { mutableStateOf(false) }
@@ -278,6 +296,9 @@ fun EventHorizonApp(
         if (autoCheckUpdates) {
             checkForUpdate(isManual = false)
         }
+        launch {
+            isUnlockedBootloader = mainActivity.checkBootloaderState(sharedPrefs)
+        }
     }
 
     LaunchedEffect(autoRootOnStart) {
@@ -357,102 +378,122 @@ fun EventHorizonApp(
             }
         )
 
-        ListItem(
-            headlineContent = { Text("Root on Boot") },
-            supportingContent = {
-                Text(if (rootOnBoot) "Root on Startup" else "Won't Root on Startup")
-            },
-            leadingContent = {
-                Icon(
-                    imageVector = Icons.Filled.Power,
-                    contentDescription = "Power"
-                )
-            },
-            trailingContent = {
-                Switch(
-                    checked = rootOnBoot,
-                    onCheckedChange = { checked ->
-                        rootOnBoot = checked
-                        sharedPrefs.edit().putBoolean("root_on_boot", checked).apply()
-                    },
-                    enabled = !mainActivity.isPatched()
-                )
-            }
-        )
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        if (mainActivity.isPatched()) {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.errorContainer
-                )
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text(
-                        text = "⚠️ Exploit is patched on this device",
-                        style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Bold),
-                        color = MaterialTheme.colorScheme.onErrorContainer
+        if (isUnlockedBootloader) {
+            ListItem(
+                headlineContent = { Text("Start on Boot") },
+                supportingContent = {
+                    Text(if (startOnBoot) "App will launch on startup" else "App will not launch on startup")
+                },
+                leadingContent = {
+                    Icon(
+                        imageVector = Icons.Filled.Power,
+                        contentDescription = "Power"
                     )
-                    Text(
-                        text = "The exploit will NOT work on this firmware version",
-                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
-                        color = MaterialTheme.colorScheme.onErrorContainer
-                    )
-                    Text(
-                        text = "Current Firmware: ${mainActivity.getVersionIncremental()}",
-                        style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
-                        color = MaterialTheme.colorScheme.onErrorContainer
+                },
+                trailingContent = {
+                    Switch(
+                        checked = startOnBoot,
+                        onCheckedChange = { checked ->
+                            startOnBoot = checked
+                            sharedPrefs.edit().putBoolean("start_on_boot", checked).apply()
+                        }
                     )
                 }
-            }
-            Spacer(modifier = Modifier.height(12.dp))
-        }
-
-    if (!mainActivity.isSupportedDevice()) {
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.errorContainer
             )
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text(
-                    text = "⚠️ Exploit doesn't support this device",
-                    style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Bold),
-                    color = MaterialTheme.colorScheme.onErrorContainer
-                )
-                Text(
-                    text = "The exploit will NOT work on this headset",
-                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
-                    color = MaterialTheme.colorScheme.onErrorContainer
-                )
-                Text(
-                    text = "Headset: ${mainActivity.getDeviceName()}",
-                    style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
-                    color = MaterialTheme.colorScheme.onErrorContainer
-                )
-            }
-        }
-        Spacer(modifier = Modifier.height(12.dp))
-    }
-
-        Button(
-            onClick = {
-                if (!isProcessRunning) {
-                    mainActivity.executeExploit(context, onOutput = { line ->
-                        consoleText += line + "\n"
-                    }, onProcessComplete = {
-                        isProcessRunning = false
-                    })
-                    isProcessRunning = true
+        } else {
+            ListItem(
+                headlineContent = { Text("Root on Boot") },
+                supportingContent = {
+                    Text(if (rootOnBoot) "Root on Startup" else "Won't Root on Startup")
+                },
+                leadingContent = {
+                    Icon(
+                        imageVector = Icons.Filled.Power,
+                        contentDescription = "Power"
+                    )
+                },
+                trailingContent = {
+                    Switch(
+                        checked = rootOnBoot,
+                        onCheckedChange = { checked ->
+                            rootOnBoot = checked
+                            sharedPrefs.edit().putBoolean("root_on_boot", checked).apply()
+                        },
+                        enabled = !mainActivity.isPatched()
+                    )
                 }
-            },
-            modifier = Modifier.fillMaxWidth(),
-            enabled = !isProcessRunning && !isRooted && !mainActivity.isPatched() && mainActivity.isSupportedDevice()
-        ) {
-            Text(if (isProcessRunning) "Rooting..." else "Root Now")
+            )
+        
+            Spacer(modifier = Modifier.height(12.dp))
+
+            if (mainActivity.isPatched()) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text(
+                            text = "⚠️ Exploit is patched on this device",
+                            style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                        Text(
+                            text = "The exploit will NOT work on this firmware version",
+                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                        Text(
+                            text = "Current Firmware: ${mainActivity.getVersionIncremental()}",
+                            style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+            }
+        
+            if (!mainActivity.isSupportedDevice()) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text(
+                            text = "⚠️ Exploit doesn't support this device",
+                            style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                        Text(
+                            text = "The exploit will NOT work on this headset",
+                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                        Text(
+                            text = "Headset: ${mainActivity.getDeviceName()}",
+                            style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+            }
+        
+            Button(
+                onClick = {
+                    if (!isProcessRunning) {
+                        mainActivity.executeExploit(context, onOutput = { line ->
+                            consoleText += line + "\n"
+                        }, onProcessComplete = {
+                            isProcessRunning = false
+                        })
+                        isProcessRunning = true
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !isProcessRunning && !isRooted && !mainActivity.isPatched() && mainActivity.isSupportedDevice()
+            ) {
+                Text(if (isProcessRunning) "Rooting..." else "Root Now")
+            }
         }
 
         Spacer(modifier = Modifier.height(8.dp))
@@ -562,6 +603,7 @@ fun EventHorizonApp(
             )
         }
     }
+
     if (showUpdateOptionsDialog) {
         val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
         val currentVersion = packageInfo.versionName ?: "Unknown"
@@ -586,7 +628,6 @@ fun EventHorizonApp(
         )
     }
 }
-
 
 @Composable
 fun UpdateDialog(

@@ -502,6 +502,7 @@ fun TweaksScreen(
 
     val context = LocalContext.current
     val sharedPrefs = remember { context.getSharedPreferences("eventhorizon_prefs", Context.MODE_PRIVATE) }
+    val isUnlockedBootloader = sharedPrefs.getBoolean("is_unlocked_bootloader", false)
     val scriptFile = remember { File(context.filesDir, "rgb_led.sh") }
 
     // Helper to get initial state from SharedPreferences (for instant UI load)
@@ -1080,38 +1081,40 @@ fun TweaksScreen(
                         }
 
                         1 -> {
-                            item {
-                                TweakCard(
-                                    title = "Double-Tap Fix",
-                                    description = "Applies fix for broken Double-Tap Passthrough feature"
-                                ) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            if (!isUnlockedBootloader) {
+                                item {
+                                    TweakCard(
+                                        title = "Double-Tap Fix",
+                                        description = "Applies fix for broken Double-Tap Passthrough feature"
                                     ) {
-                                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                            Text("Run on Boot", style = MaterialTheme.typography.bodyMedium)
-                                            Switch(
-                                                checked = passthroughFixOnBoot,
-                                                onCheckedChange = { checked ->
-                                                    passthroughFixOnBoot = checked
-                                                    sharedPrefs.edit().putBoolean("passthrough_fix_on_boot", checked).apply()
-                                                    showSnack(if (checked) "Passthrough Fix on Boot Enabled" else "Passthrough Fix on Boot Disabled")
-                                                },
-                                                enabled = isRooted
-                                            )
-                                        }
-                                        Button(
-                                            onClick = {
-                                                val passthroughFixIntent = Intent(context, TweakService::class.java).apply {
-                                                    action = TweakService.ACTION_APPLY_PASSTHROUGH_FIX
-                                                }
-                                                context.startService(passthroughFixIntent)
-                                            },
-                                            enabled = isRooted,
-                                            modifier = Modifier.width(90.dp)
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                                         ) {
-                                            Text("Apply")
+                                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                                Text("Run on Boot", style = MaterialTheme.typography.bodyMedium)
+                                                Switch(
+                                                    checked = passthroughFixOnBoot,
+                                                    onCheckedChange = { checked ->
+                                                        passthroughFixOnBoot = checked
+                                                        sharedPrefs.edit().putBoolean("passthrough_fix_on_boot", checked).apply()
+                                                        showSnack(if (checked) "Passthrough Fix on Boot Enabled" else "Passthrough Fix on Boot Disabled")
+                                                    },
+                                                    enabled = isRooted
+                                                )
+                                            }
+                                            Button(
+                                                onClick = {
+                                                    val passthroughFixIntent = Intent(context, TweakService::class.java).apply {
+                                                        action = TweakService.ACTION_APPLY_PASSTHROUGH_FIX
+                                                    }
+                                                    context.startService(passthroughFixIntent)
+                                                },
+                                                enabled = isRooted,
+                                                modifier = Modifier.width(90.dp)
+                                            ) {
+                                                Text("Apply")
+                                            }
                                         }
                                     }
                                 }
