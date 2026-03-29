@@ -8,7 +8,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 object DomainBlockerManager {
-    
+
     val categories = mapOf(
         "Telemetry / Analytics" to listOf(
             "graph.oculus.com", "graph.facebook.com", "analytics.facebook.com", 
@@ -61,7 +61,11 @@ object DomainBlockerManager {
         return "block_category_${categoryName.replace(" / ", "_").replace(" ", "_").lowercase()}"
     }
 
-    suspend fun generateAndApplyHosts(context: Context): Boolean = withContext(Dispatchers.IO) {
+    suspend fun generateAndApplyHosts(
+        context: Context, 
+        isBootTrigger: Boolean = false, 
+        preventSoftReboot: Boolean = false
+    ): Boolean = withContext(Dispatchers.IO) {
         val sharedPrefs = context.getSharedPreferences("eventhorizon_prefs", Context.MODE_PRIVATE)
         val isBlockerEnabled = sharedPrefs.getBoolean("root_blocker_is_running", false)
         val isUnlocked = sharedPrefs.getBoolean("is_unlocked_bootloader", false)
@@ -72,11 +76,8 @@ object DomainBlockerManager {
 
         if (isBlockerEnabled) {
             sb.append("# ----- Blocked domains by EventHorizon -----\n")
-            
             for ((categoryName, domains) in categories) {
-                val isCategoryEnabled = sharedPrefs.getBoolean(getPrefKey(categoryName), false)
-                
-                if (isCategoryEnabled) {
+                if (sharedPrefs.getBoolean(getPrefKey(categoryName), false)) {
                     sb.append("\n# $categoryName\n")
                     for (domain in domains) {
                         sb.append("0.0.0.0 $domain\n")
@@ -86,16 +87,27 @@ object DomainBlockerManager {
         }
 
         try {
-            // Write to a temporary file
             val tempFile = File(context.cacheDir, "hosts_temp")
             tempFile.writeText(sb.toString())
 
             val moduleDir = "/data/adb/eventhorizon"
             val finalHostsPath = "$moduleDir/hosts"
 
-            val dnsFlushCommand = if (isUnlocked) {
-                "stop; sleep 3; start"
-            } else {
+            val dnsFlushCommand = if (isUnlocked && !preventSoftReboot) {
+                if (isBootTrigger) {
+                    """
+                    if [ "$(getprop sys.eh.boot_flushed)" != "1" ]; then
+                        setprop sys.eh.boot_flushed 1
+                        stop; sleep 3; start
+                    fi
+                    """.trimIndent()
+                } else {
+                    """
+                    setprop sys.eh.manual_toggle 1
+                    stop; sleep 3; start
+                    """.trimIndent()
+                }
+            } else if (!isUnlocked && !preventSoftReboot) {
                 """
                 settings put global airplane_mode_on 1
                 am broadcast -a android.intent.action.AIRPLANE_MODE --ez state true
@@ -103,9 +115,10 @@ object DomainBlockerManager {
                 settings put global airplane_mode_on 0
                 am broadcast -a android.intent.action.AIRPLANE_MODE --ez state false
                 """.trimIndent()
+            } else {
+                ""
             }
 
-            // Move the temp file to our adb directory, bind mount it, and flush DNS
             val commands = """
                 mkdir -p $moduleDir
                 mv ${tempFile.absolutePath} $finalHostsPath
@@ -117,7 +130,6 @@ object DomainBlockerManager {
 
             RootUtils.runAsRoot(commands, useMountMaster = true)
             
-            // Verify if the mount was successful
             val check = RootUtils.runAsRoot("mount | grep /system/etc/hosts", useMountMaster = true)
             return@withContext check.isNotBlank()
 
@@ -127,13 +139,19 @@ object DomainBlockerManager {
         }
     }
 
-    suspend fun disableRootBlocker(context: Context): Boolean = withContext(Dispatchers.IO) {
+    suspend fun disableRootBlocker(
+        context: Context, 
+        preventSoftReboot: Boolean = false
+    ): Boolean = withContext(Dispatchers.IO) {
         val sharedPrefs = context.getSharedPreferences("eventhorizon_prefs", Context.MODE_PRIVATE)
         val isUnlocked = sharedPrefs.getBoolean("is_unlocked_bootloader", false)
         
-        val dnsFlushCommand = if (isUnlocked) {
-            "stop; sleep 3; start"
-        } else {
+        val dnsFlushCommand = if (isUnlocked && !preventSoftReboot) {
+            """
+            setprop sys.eh.manual_toggle 1
+            stop; sleep 3; start
+            """.trimIndent()
+        } else if (!isUnlocked && !preventSoftReboot) {
             """
             settings put global airplane_mode_on 1
             am broadcast -a android.intent.action.AIRPLANE_MODE --ez state true
@@ -141,6 +159,8 @@ object DomainBlockerManager {
             settings put global airplane_mode_on 0
             am broadcast -a android.intent.action.AIRPLANE_MODE --ez state false
             """.trimIndent()
+        } else {
+            ""
         }
 
         val commands = """

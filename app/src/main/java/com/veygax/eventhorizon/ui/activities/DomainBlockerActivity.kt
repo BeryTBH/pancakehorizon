@@ -194,7 +194,10 @@ fun DomainBlockerScreen(onNavigateBack: () -> Unit) {
                                     // If master switch is on, instantly regenerate and apply the hosts file
                                     if (isMasterEnabled) {
                                         coroutineScope.launch {
-                                            DomainBlockerManager.generateAndApplyHosts(context)
+                                            DomainBlockerManager.generateAndApplyHosts(
+                                                context = context, 
+                                                preventSoftReboot = true
+                                            )
                                         }
                                     }
                                 }

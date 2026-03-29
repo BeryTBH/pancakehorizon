@@ -167,10 +167,17 @@ class BootReceiver : BroadcastReceiver() {
                 scope.launch {
                     delay(5000) 
                     if (RootUtils.isRootAvailable()) {
+                        // Check if this boot was caused by a manual user toggle soft-reboot
+                        val isManualToggle = RootUtils.runAsRoot("getprop sys.eh.manual_toggle").trim() == "1"
+                        
+                        if (isManualToggle) {
+                            Log.i("BootReceiver", "Skipping boot blocker logic due to manual toggle soft reboot.")
+                            RootUtils.runAsRoot("setprop sys.eh.manual_toggle 0")
+                            return@launch
+                        }
                         Log.i("BootReceiver", "Applying categorized domain blocker...")
-                        
-                        val success = DomainBlockerManager.generateAndApplyHosts(context)
-                        
+
+                        val success = DomainBlockerManager.generateAndApplyHosts(context, isBootTrigger = true)
                         if (success) {
                             sharedPrefs.edit().putBoolean("root_blocker_is_running", true).apply()
                             
@@ -260,19 +267,29 @@ class BootReceiver : BroadcastReceiver() {
             // --- Passthrough Fix on Boot Logic ---
             if (passthroughFixOnBoot) {
                 scope.launch {
-                    delay(5000) // let system settle a bit
+                    val isUnlocked = sharedPrefs.getBoolean("is_unlocked_bootloader", false)
+
+                    if (isRootBlockerEnabledOnBoot && isUnlocked) {
+                        val flushed = RootUtils.runAsRoot("getprop sys.eh.boot_flushed").trim()
+                        if (flushed != "1") {
+                            Log.i("BootReceiver", "Passthrough Fix: Waiting for Domain Blocker soft reboot. Skipping this cycle.")
+                            return@launch 
+                        }
+                    }
+            
+                    delay(8000)
                     if (RootUtils.isRootAvailable()) {
+                        Log.i("BootReceiver", "Applying Passthrough Fix after system stability check.")
                         RootUtils.runAsRoot("am force-stop com.oculus.systemdriver", useMountMaster = true)
                         delay(5000)
                         RootUtils.runAsRoot("am start -n com.veygax.eventhorizon/.ui.activities.MainActivity", useMountMaster = true)
-                        sharedPrefs.edit().putBoolean("passthrough_fix_on_boot", true).apply()
-
+                        
                         val appToLaunch = sharedPrefs.getString("start_app_on_boot", null)
                         if (!appToLaunch.isNullOrEmpty()) {
                             val appIntent = context.packageManager.getLaunchIntentForPackage(appToLaunch)
-                            if (appIntent != null) {
-                                appIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                context.startActivity(appIntent)
+                            appIntent?.let {
+                                it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                context.startActivity(it)
                             }
                         }
                     }
