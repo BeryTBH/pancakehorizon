@@ -355,7 +355,7 @@ fun EventHorizonApp(
         Spacer(modifier = Modifier.height(8.dp))
 
         Text(
-            text = "root for the meta surveillance device by veygax, zhuowei and freexr",
+            text = "root for the meta surveillance device by veygax, lumince, zhuowei and freexr",
             style = MaterialTheme.typography.bodyLarge,
             modifier = Modifier.fillMaxWidth(),
             textAlign = TextAlign.Left,
