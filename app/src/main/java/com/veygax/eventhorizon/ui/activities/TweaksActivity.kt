@@ -44,6 +44,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.lifecycleScope
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import com.veygax.eventhorizon.system.DnsBlockerService
+import com.veygax.eventhorizon.system.DomainBlockerManager
 import com.veygax.eventhorizon.system.TweakService
 import com.veygax.eventhorizon.utils.CpuMonitorInfo
 import com.veygax.eventhorizon.utils.CpuUtils
@@ -276,67 +277,6 @@ class TweaksActivity : ComponentActivity() {
         }
     }
 
-    private suspend fun copyHostsFileFromAssets(context: Context) = withContext(Dispatchers.IO) {
-        try {
-            Log.d("RootBlocker", "Starting to copy hosts file from assets...")
-            val assetPath = "hosts/hosts"
-            val inputStream = context.assets.open(assetPath)
-            val hostsContent = inputStream.bufferedReader().use { it.readText() }
-            val tempFile = File(context.cacheDir, "hosts_temp")
-            tempFile.writeText(hostsContent)
-            val moduleDir = "/data/adb/eventhorizon"
-            val finalHostsPath = "$moduleDir/hosts"
-            val commands = """
-                mkdir -p $moduleDir
-                mv ${tempFile.absolutePath} $finalHostsPath
-                chmod 644 $finalHostsPath
-            """.trimIndent()
-            RootUtils.runAsRoot(commands)
-            Log.d("RootBlocker", "Hosts file successfully copied to $finalHostsPath")
-        } catch (e: Exception) {
-            Log.e("RootBlocker", "Error copying hosts file", e)
-        }
-    }
-
-    public suspend fun enableRootBlocker(): Boolean = withContext(Dispatchers.IO) {
-        try {
-            Log.d("RootBlocker", "enableRootBlocker function called.")
-            copyHostsFileFromAssets(applicationContext)
-            val commands = """
-                umount -l /system/etc/hosts
-                mount -o bind /data/adb/eventhorizon/hosts /system/etc/hosts
-            """.trimIndent()
-            RootUtils.runAsRoot(commands, useMountMaster = true)
-        
-            val check = RootUtils.runAsRoot("mount | grep /system/etc/hosts", useMountMaster = true)
-            return@withContext check.isNotBlank()
-        } catch (e: Exception) {
-            Log.e("RootBlocker", "Error enabling root blocker", e)
-            return@withContext false
-        }
-    }
-
-    fun disableRootBlocker() {
-        lifecycleScope.launch(Dispatchers.IO) {
-            val commands = """
-                umount -l /system/etc/hosts
-                settings put global airplane_mode_on 1
-                am broadcast -a android.intent.action.AIRPLANE_MODE --ez state true
-                sleep 4
-                settings put global airplane_mode_on 0
-                am broadcast -a android.intent.action.AIRPLANE_MODE --ez state false
-            """.trimIndent()
-
-            val result = RootUtils.runAsRoot(commands, useMountMaster = true)
-            Log.d("RootBlocker", "Disable root blocker result:\n$result")
-
-            withContext(Dispatchers.Main) {
-                val check = RootUtils.runAsRoot("mount | grep /system/etc/hosts", useMountMaster = true)
-                isRootBlockerManuallyEnabledState.value = check.isNotBlank()
-            }
-        }
-    }
-
     suspend fun copyTelemetryAssets(context: Context) = withContext(Dispatchers.IO) {
         val moduleDir = "/data/adb/eventhorizon"
         val commands = StringBuilder("mkdir -p $moduleDir\n")
@@ -542,6 +482,7 @@ fun TweaksScreen(
     // Domain Blocker
     val initialRootBlockerOnBoot = getInitialState("root_blocker_on_boot")
     val initialRootBlockerIsRunning = getInitialState("root_blocker_is_running", initialRootBlockerOnBoot)
+    var isRootBlockerSetup by remember { mutableStateOf(sharedPrefs.getBoolean("root_blocker_setup", false)) }
     var isRootBlockerOnBoot by rememberSaveable { mutableStateOf(initialRootBlockerOnBoot) }
     var isRootBlockerManuallyEnabled by remember { mutableStateOf(initialRootBlockerIsRunning) }
 
@@ -680,6 +621,7 @@ fun TweaksScreen(
                             putBoolean("gpu_min_freq_is_running", states.isGpuMinFreqExecuting)
                             putBoolean("gpu_max_freq_is_running", states.isGpuMaxFreqExecuting)
                             putBoolean("intercept_startup_apps", states.isInterceptorEnabled)
+                            putBoolean("usb_interceptor_running", states.isUsbInterceptorEnabled)
                             putBoolean("ota_blocker_running", states.isOtaBlockerActive)
                             putBoolean("root_blocker_is_running", states.isRootBlockerManuallyEnabled)
                             putBoolean("wireless_adb_is_running", states.isWirelessAdbEnabled)
@@ -799,7 +741,6 @@ fun TweaksScreen(
                     putBoolean("gpu_min_freq_is_running", states.isGpuMinFreqExecuting)
                     putBoolean("gpu_max_freq_is_running", states.isGpuMaxFreqExecuting)
                     putBoolean("intercept_startup_apps", states.isInterceptorEnabled)
-                    putBoolean("usb_interceptor_running", states.isUsbInterceptorEnabled)
                     putBoolean("ota_blocker_running", states.isOtaBlockerActive)
                     putBoolean("root_blocker_is_running", states.isRootBlockerManuallyEnabled)
                     putBoolean("wireless_adb_is_running", states.isWirelessAdbEnabled)
@@ -1197,6 +1138,8 @@ fun TweaksScreen(
                                 item {
                                     TweakCard("Meta Domain Blocker", "Blocks Meta domains using bind mounting") {
                                         Column(modifier = Modifier.width(IntrinsicSize.Max)) {
+                                            
+                                            // --- Enable on Boot Toggle ---
                                             Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
                                                 Text("Enable on Boot", style = MaterialTheme.typography.bodyMedium)
                                                 Switch(
@@ -1209,37 +1152,43 @@ fun TweaksScreen(
                                                         editor.putBoolean("blocker_on_boot", isEnabled)
                                                         editor.apply()
                                                         showSnack(if (isEnabled) "Blocker on Boot Enabled" else "Blocker on Boot Disabled")
-                                                    }
+                                                    },
+                                                    // Disable this switch if the blocker hasn't been set up yet
+                                                    enabled = isRooted && isRootBlockerSetup
                                                 )
                                             }
+                            
                                             Spacer(Modifier.height(8.dp))
-                                            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
-                                                Text("Blocker Status", style = MaterialTheme.typography.bodyMedium)
-                                                Switch(
-                                                    checked = isRootBlockerManuallyEnabled,
-                                                    onCheckedChange = { isEnabled ->
-                                                        isRootBlockerManuallyEnabled = isEnabled
-                                                        sharedPrefs.edit().putBoolean("root_blocker_is_running", isEnabled).apply()
-
-                                                        coroutineScope.launch {
-                                                            if (isEnabled) {
-                                                                val isSuccess = activity.enableRootBlocker()
-                                                                isRootBlockerManuallyEnabled = isSuccess
-                                                                sharedPrefs.edit().putBoolean("root_blocker_is_running", isSuccess).apply()
-                                                                if (isSuccess) {
-                                                                    showSnack("Root domain blocker enabled")
-                                                                } else {
-                                                                    showSnack("Root domain blocker failed to enable")
-                                                                }
-                                                            } else {
-                                                                activity.disableRootBlocker()
-                                                                sharedPrefs.edit().putBoolean("root_blocker_is_running", false).apply()
-                                                                showSnack("Root blocker disabled")
-                                                            }
-                                                        }
+                            
+                                            // --- Setup vs Config/Status UI ---
+                                            if (!isRootBlockerSetup) {
+                                                // Show Setup Button for first-time use
+                                                Button(
+                                                    onClick = {
+                                                        // Mark as setup so the full UI unlocks
+                                                        sharedPrefs.edit().putBoolean("root_blocker_setup", true).apply()
+                                                        isRootBlockerSetup = true
+                                                        
+                                                        // Launch the new activity to configure domains
+                                                        context.startActivity(Intent(context, DomainBlockerActivity::class.java))
                                                     },
-                                                    enabled = isRooted
-                                                )
+                                                    modifier = Modifier.fillMaxWidth()
+                                                ) {
+                                                    Text("Setup Blocker")
+                                                }
+                                            } else {
+                                                // Show Config Button and Start/Stop Toggle once set up
+                                                Row(
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    horizontalArrangement = Arrangement.SpaceEvenly,
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Button(onClick = {
+                                                        context.startActivity(Intent(context, DomainBlockerActivity::class.java))
+                                                    }) {
+                                                        Text("Config")
+                                                    }
+                                                }
                                             }
                                         }
                                     }

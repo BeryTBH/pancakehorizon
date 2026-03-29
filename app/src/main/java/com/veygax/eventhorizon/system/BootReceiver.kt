@@ -33,6 +33,7 @@ class BootReceiver : BroadcastReceiver() {
             val wirelessAdbOnBoot = sharedPrefs.getBoolean("wireless_adb_on_boot", false)
             val cycleWifiOnBoot = sharedPrefs.getBoolean("cycle_wifi_on_boot", false)
             val isRootBlockerEnabledOnBoot = sharedPrefs.getBoolean("root_blocker_on_boot", false)
+            val isRootBlockerSetup = sharedPrefs.getBoolean("root_blocker_setup", false)
             val usbInterceptorOnBoot = sharedPrefs.getBoolean("usb_interceptor_on_boot", false)
             val proxSensorDisabled = sharedPrefs.getBoolean("prox_sensor_disabled", false)
             val isLockUpdateFoldersActive = sharedPrefs.getBoolean("lock_update_folders_is_locked", false)
@@ -162,65 +163,26 @@ class BootReceiver : BroadcastReceiver() {
             }
 
             // --- Domain Blocker Boot Logic ---
-            if (isRootBlockerEnabledOnBoot) {
-                Log.i("BootReceiver", "Root blocker enabled. Starting kill switch...")
-
-                // 1. Start the kill switch immediately (blocks internet until root mount is ready)
-                val serviceIntent = Intent(context, DnsBlockerService::class.java).apply {
-                    action = DnsBlockerService.ACTION_START
-                }
-                context.startService(serviceIntent)
-
-                // 2. Switch to root blocker only if root is available
+            if (isRootBlockerEnabledOnBoot && isRootBlockerSetup) {
                 scope.launch {
-                    delay(5000) // let system settle a bit
-
+                    delay(5000) 
                     if (RootUtils.isRootAvailable()) {
-                        Log.i("BootReceiver", "Root available, copying hosts file...")
-
-                        val hostsFile = File("/data/adb/eventhorizon/hosts")
-                        if (!hostsFile.exists()) {
-                            try {
-                                Log.d("BootReceiver", "Starting to copy hosts file from assets...")
-                                val assetPath = "hosts/hosts"
-                                val inputStream = context.assets.open(assetPath)
-                                val hostsContent = inputStream.bufferedReader().use { it.readText() }
-                                val tempFile = File(context.cacheDir, "hosts_temp")
-                                tempFile.writeText(hostsContent)
-
-                                val moduleDir = "/data/adb/eventhorizon"
-                                val finalHostsPath = "$moduleDir/hosts"
-                                val commands = """
-                                    mkdir -p $moduleDir
-                                    mv ${tempFile.absolutePath} $finalHostsPath
-                                    chmod 644 $finalHostsPath
-                                """.trimIndent()
-
-                                RootUtils.runAsRoot(commands)
-                                Log.d("BootReceiver", "Hosts file successfully copied to $finalHostsPath")
-                            } catch (e: Exception) {
-                                Log.e("BootReceiver", "Error copying hosts file", e)
+                        Log.i("BootReceiver", "Applying categorized domain blocker...")
+                        
+                        val success = DomainBlockerManager.generateAndApplyHosts(context)
+                        
+                        if (success) {
+                            sharedPrefs.edit().putBoolean("root_blocker_is_running", true).apply()
+                            
+                            val stopVpnIntent = Intent(context, DnsBlockerService::class.java).apply {
+                                action = DnsBlockerService.ACTION_STOP
                             }
+                            context.startService(stopVpnIntent)
                         }
-
-                        RootUtils.runAsRoot(
-                            "umount -l /system/etc/hosts; mount -o bind /data/adb/eventhorizon/hosts /system/etc/hosts",
-                            useMountMaster = true
-                        )
-                        Log.i("BootReceiver", "Hosts file mounted.")
-                        sharedPrefs.edit().putBoolean("root_blocker_is_running", true).apply()
-
-                        // Stop VPN kill switch now that root blocker is active
-                        val stopIntent = Intent(context, DnsBlockerService::class.java).apply {
-                            action = DnsBlockerService.ACTION_STOP
-                        }
-                        context.startService(stopIntent)
-                        Log.i("BootReceiver", "Kill switch stopped. Root blocker active.")
-                    } else {
-                        Log.w("BootReceiver", "Root not available at boot. Leaving kill switch ON.")
-                        // Do nothing else — kill switch stays active
                     }
                 }
+            } else if (isRootBlockerEnabledOnBoot && !isRootBlockerSetup) {
+                Log.w("BootReceiver", "Blocker enabled on boot but NOT setup. Skipping to avoid empty hosts file.")
             }
 
             // --- USB Interceptor Boot Logic ---
