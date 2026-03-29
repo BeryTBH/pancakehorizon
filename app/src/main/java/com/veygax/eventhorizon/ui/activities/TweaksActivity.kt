@@ -68,6 +68,7 @@ object StatusChecks {
     private const val PREFIX_GPU_MAX_LOCK = "CHECK_GPU_MAX_LOCK:"
     private const val PREFIX_INTERCEPT = "CHECK_INTERCEPT:"
     private const val PREFIX_USB_INTERCEPT = "CHECK_USB_INTERCEPT:"
+    private const val PREFIX_OTA_BLOCK = "CHECK_OTA_BLOCK:"
     private const val PREFIX_CPU_GOV = "CHECK_CPU_GOV:"
     private const val PREFIX_ADB_PORT = "CHECK_ADB_PORT:"
     private const val PREFIX_ROOT_BLOCK = "CHECK_ROOT_BLOCK:"
@@ -91,6 +92,7 @@ object StatusChecks {
         echo "${PREFIX_GPU_MAX_LOCK}$(ps -ef | grep ${GpuUtils.GPU_MAX_FREQ_SCRIPT_NAME} | grep -v grep)"
         echo "${PREFIX_INTERCEPT}$(ps -ef | grep interceptor.sh | grep -v grep)"
         echo "${PREFIX_USB_INTERCEPT}$(ps -ef | grep usb_interceptor.sh | grep -v grep)"
+        echo "${PREFIX_OTA_BLOCK}${'$'}(ps -ef | grep ota_blocker.sh | grep -v grep)"
 
         # System/Root States
         echo "${PREFIX_ROOT_BLOCK}$(mount | grep /system/etc/hosts)"
@@ -119,6 +121,7 @@ object StatusChecks {
         var isGpuMaxFreqExecuting: Boolean = false,
         var isInterceptorEnabled: Boolean = false,
         var isUsbInterceptorEnabled: Boolean = false,
+        var isOtaBlockerActive: Boolean = false,
         var isRootBlockerManuallyEnabled: Boolean = false,
         var isCpuPerfMode: Boolean = false,
         var isWirelessAdbEnabled: Boolean = false,
@@ -165,6 +168,9 @@ object StatusChecks {
                     }
                     line.startsWith(PREFIX_USB_INTERCEPT) -> {
                         states.isUsbInterceptorEnabled = line.substringAfter(PREFIX_USB_INTERCEPT).trim().isNotEmpty()
+                    }
+                    line.startsWith(PREFIX_OTA_BLOCK) -> {
+                        states.isOtaBlockerActive = line.substringAfter(PREFIX_OTA_BLOCK).trim().isNotEmpty()
                     }
                     line.startsWith(PREFIX_ROOT_BLOCK) -> {
                         states.isRootBlockerManuallyEnabled = line.substringAfter(PREFIX_ROOT_BLOCK).trim().isNotEmpty()
@@ -594,6 +600,11 @@ fun TweaksScreen(
     var isUsbInterceptorEnabled by remember { mutableStateOf(sharedPrefs.getBoolean("usb_interceptor_running", false)) }
     var usbInterceptorOnBoot by rememberSaveable { mutableStateOf(getInitialState("usb_interceptor_on_boot")) }
 
+    // OTA Blocker
+    val initialOtaBlockerState = getInitialState("ota_blocker_running")
+    var isOtaBlockerEnabled by remember { mutableStateOf(initialOtaBlockerState) }
+    var otaLiveStatus by remember { mutableStateOf("Unknown") }
+
     // Proximity Sensor
     val initialProxSensorDisabledState = getInitialState("prox_sensor_disabled")
     var proxSensorOnBoot by rememberSaveable { mutableStateOf(getInitialState("prox_sensor_on_boot")) }
@@ -669,6 +680,7 @@ fun TweaksScreen(
                             putBoolean("gpu_min_freq_is_running", states.isGpuMinFreqExecuting)
                             putBoolean("gpu_max_freq_is_running", states.isGpuMaxFreqExecuting)
                             putBoolean("intercept_startup_apps", states.isInterceptorEnabled)
+                            putBoolean("ota_blocker_running", states.isOtaBlockerActive)
                             putBoolean("root_blocker_is_running", states.isRootBlockerManuallyEnabled)
                             putBoolean("wireless_adb_is_running", states.isWirelessAdbEnabled)
                             putBoolean("lock_update_folders_is_locked", states.areUpdateFoldersLocked)
@@ -698,6 +710,7 @@ fun TweaksScreen(
                             isGpuMaxFreqRunning = states.isGpuMaxFreqExecuting
                             isInterceptorEnabled = states.isInterceptorEnabled
                             isUsbInterceptorEnabled = states.isUsbInterceptorEnabled
+                            isOtaBlockerEnabled = states.isOtaBlockerActive
                             isRootBlockerManuallyEnabled = states.isRootBlockerManuallyEnabled
                             isCpuPerfMode = states.isCpuPerfMode
                             isWirelessAdbEnabled = states.isWirelessAdbEnabled
@@ -787,6 +800,7 @@ fun TweaksScreen(
                     putBoolean("gpu_max_freq_is_running", states.isGpuMaxFreqExecuting)
                     putBoolean("intercept_startup_apps", states.isInterceptorEnabled)
                     putBoolean("usb_interceptor_running", states.isUsbInterceptorEnabled)
+                    putBoolean("ota_blocker_running", states.isOtaBlockerActive)
                     putBoolean("root_blocker_is_running", states.isRootBlockerManuallyEnabled)
                     putBoolean("wireless_adb_is_running", states.isWirelessAdbEnabled)
                     putBoolean("lock_update_folders_is_locked", states.areUpdateFoldersLocked)
@@ -796,6 +810,8 @@ fun TweaksScreen(
                     putBoolean("navigator_fog_enabled", states.isNavigatorFogEnabled)
                     putBoolean("panel_scaling_enabled", states.isPanelScalingEnabled)
                     putBoolean("infinite_panels_enabled", states.isInfinitePanelsEnabled)
+                    putBoolean("no_controller_enabled", states.isNoControllerEnabled)
+                    putBoolean("frida_is_running", states.isFridaServerActive)
                     apply()
                 }
                 
@@ -834,6 +850,25 @@ fun TweaksScreen(
                 }
                 delay(2000)
             }
+        }
+    }
+
+    LaunchedEffect(isOtaBlockerEnabled) {
+        while (isOtaBlockerEnabled) {
+            try {
+                val file = java.io.File("/data/adb/eventhorizon/eh_ota_status.txt")
+                if (file.exists() && file.canRead()) {
+                    val statusText = file.readText().trim()
+                    if (statusText.isNotEmpty()) {
+                        otaLiveStatus = statusText
+                    }
+                } else {
+                    otaLiveStatus = "Waiting for listener..."
+                }
+            } catch (e: Exception) {
+                otaLiveStatus = "Error reading status"
+            }
+            delay(1500) // Updates the UI every 1.5 seconds safely
         }
     }
 
@@ -1548,6 +1583,38 @@ fun TweaksScreen(
                                             )
                                         }
                                     }
+                                }
+                            }
+                            item {
+                                TweakCard(
+                                    title = "OS Update Monitor",
+                                    description = "Monitors and automatically cancels or resets system updates\nStatus: $otaLiveStatus"
+                                ) {
+                                    Switch(
+                                        checked = isOtaBlockerEnabled,
+                                        onCheckedChange = { isEnabled ->
+                                            isOtaBlockerEnabled = isEnabled
+
+                                            // Maps to a single switch for both boot and active states
+                                            sharedPrefs.edit()
+                                                .putBoolean("ota_blocker_running", isEnabled)
+                                                .putBoolean("ota_blocker_on_boot", isEnabled)
+                                                .apply()
+                                            
+                                            coroutineScope.launch(Dispatchers.IO) {
+                                                if (isEnabled) {
+                                                    activity.startTweakServiceAction(TweakService.ACTION_START_OTA_BLOCKER)
+                                                } else {
+                                                    activity.startTweakServiceAction(TweakService.ACTION_STOP_OTA_BLOCKER)
+                                                }
+                                                
+                                                withContext(Dispatchers.Main) {
+                                                    showSnack(if (isEnabled) "Active OTA Blocker Enabled" else "Active OTA Blocker Disabled")
+                                                }
+                                            }
+                                        },
+                                        enabled = isRooted
+                                    )
                                 }
                             }
                             item {

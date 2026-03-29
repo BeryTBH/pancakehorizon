@@ -71,6 +71,35 @@ class TweakService : Service() {
         done
     """.trimIndent()
 
+    private val OTA_BLOCKER_SCRIPT = """
+        #!/system/bin/sh
+        STATUS_FILE="/data/adb/eventhorizon/eh_ota_status.txt"
+        
+        touch "${'$'}STATUS_FILE"
+        chmod 666 "${'$'}STATUS_FILE"
+        echo "Listening..." > "${'$'}STATUS_FILE"
+        
+        while true; do
+            # Redirecting stderr to stdout (2>&1) so the loop can read the INFO logs
+            update_engine_client --follow 2>&1 | while read -r line; do
+                case "${'$'}line" in
+                    *"UPDATE_AVAILABLE"*|*"DOWNLOADING"*|*"VERIFYING"*|*"FINALIZING"*)
+                        echo "Action detected: Canceling..." > "${'$'}STATUS_FILE"
+                        update_engine_client --cancel
+                        ;;
+                    *"UPDATED_NEED_REBOOT"*)
+                        echo "Reboot pending: Resetting..." > "${'$'}STATUS_FILE"
+                        update_engine_client --reset_status
+                        ;;
+                    *"IDLE"*)
+                        echo "Idle" > "${'$'}STATUS_FILE"
+                        ;;
+                esac
+            done
+            sleep 5
+        done
+    """.trimIndent()
+
     companion object {
         const val ACTION_START_RGB = "com.veygax.eventhorizon.START_RGB"
         const val ACTION_STOP_RGB = "com.veygax.eventhorizon.STOP_RGB"
@@ -97,6 +126,9 @@ class TweakService : Service() {
         const val ACTION_START_USB_INTERCEPTOR = "com.veygax.eventhorizon.START_USB_INTERCEPTOR"
         const val ACTION_STOP_USB_INTERCEPTOR = "com.veygax.eventhorizon.STOP_USB_INTERCEPTOR"
 
+        const val ACTION_START_OTA_BLOCKER = "com.veygax.eventhorizon.START_OTA_BLOCKER"
+        const val ACTION_STOP_OTA_BLOCKER = "com.veygax.eventhorizon.STOP_OTA_BLOCKER"
+
         const val ACTION_START_WIRELESS_ADB = "com.veygax.eventhorizon.action.START_WIRELESS_ADB"
         const val ACTION_STOP_WIRELESS_ADB = "com.veygax.eventhorizon.action.STOP_WIRELESS_ADB"
         
@@ -114,6 +146,7 @@ class TweakService : Service() {
     private var isMinFreqRunning: Boolean = false
     private var isInterceptorRunning: Boolean = false
     private var isUsbInterceptorRunning = false
+    private var isOtaBlockerRunning = false
     private var isGpuMinFreqRunning: Boolean = false
     private var isGpuMaxFreqRunning: Boolean = false
     private var isFridaRunning: Boolean = false
@@ -125,6 +158,7 @@ class TweakService : Service() {
     private lateinit var minFreqScriptFile: File
     private lateinit var interceptorScriptFile: File
     private lateinit var usbInterceptorScriptFile: File
+    private lateinit var otaBlockerScriptFile: File
     private lateinit var gpuMinFreqScriptFile: File
     private lateinit var gpuMaxFreqScriptFile: File
 
@@ -136,6 +170,7 @@ class TweakService : Service() {
         minFreqScriptFile = File(filesDir, CpuUtils.SCRIPT_NAME)
         interceptorScriptFile = File(filesDir, "interceptor.sh")
         usbInterceptorScriptFile = File(filesDir, "usb_interceptor.sh")
+        otaBlockerScriptFile = File(filesDir, "ota_blocker.sh")
         gpuMinFreqScriptFile = File(filesDir, GpuUtils.GPU_MIN_FREQ_SCRIPT_NAME)
         gpuMaxFreqScriptFile = File(filesDir, GpuUtils.GPU_MAX_FREQ_SCRIPT_NAME)
 
@@ -155,6 +190,7 @@ class TweakService : Service() {
         val runningCpu = RootUtils.runAsRoot("ps -ef | grep ${CpuUtils.SCRIPT_NAME} | grep -v grep").trim().isNotEmpty()
         val runningInterceptor = RootUtils.runAsRoot("ps -ef | grep interceptor.sh | grep -v grep").trim().isNotEmpty()
         val runningUsbInterceptor = RootUtils.runAsRoot("ps -ef | grep usb_interceptor.sh | grep -v grep").trim().isNotEmpty()
+        val runningOtaBlocker = RootUtils.runAsRoot("ps -ef | grep ota_blocker.sh | grep -v grep").trim().isNotEmpty()
         val runningGpuMin = RootUtils.runAsRoot("ps -ef | grep ${GpuUtils.GPU_MIN_FREQ_SCRIPT_NAME} | grep -v grep").trim().isNotEmpty()
         val runningGpuMax = RootUtils.runAsRoot("ps -ef | grep ${GpuUtils.GPU_MAX_FREQ_SCRIPT_NAME} | grep -v grep").trim().isNotEmpty()
         val runningFrida = RootUtils.runAsRoot("ps -ef | grep frida-server | grep -v grep").trim().isNotEmpty()
@@ -164,6 +200,7 @@ class TweakService : Service() {
         isMinFreqRunning = runningCpu
         isInterceptorRunning = runningInterceptor
         isUsbInterceptorRunning = runningUsbInterceptor
+        isOtaBlockerRunning = runningOtaBlocker
         isGpuMinFreqRunning = runningGpuMin
         isGpuMaxFreqRunning = runningGpuMax
         isFridaRunning = runningFrida
@@ -249,8 +286,10 @@ class TweakService : Service() {
                     serviceScope.launch {
                     RootUtils.runAsRoot("setprop service.adb.tcp.port 5555; stop adbd; start adbd")
                     sharedPrefs.edit().putBoolean("wireless_adb_is_running", true).apply()
-            }
-        }
+                    }
+                }
+                ACTION_START_OTA_BLOCKER -> startOtaBlocker()
+                ACTION_STOP_OTA_BLOCKER -> stopOtaBlocker()
                 ACTION_STOP_WIRELESS_ADB -> {
                     Log.i(TAG, "Stopping Wireless ADB")
                     serviceScope.launch {
@@ -461,8 +500,23 @@ class TweakService : Service() {
         updateServiceState()
     }
 
+    private suspend fun startOtaBlocker() {
+        RootUtils.runAsRoot("pkill -f ota_blocker.sh || true")
+        otaBlockerScriptFile.writeText(OTA_BLOCKER_SCRIPT)
+        RootUtils.runAsRoot("chmod +x ${otaBlockerScriptFile.absolutePath}")
+        RootUtils.runAsRoot("nohup ${otaBlockerScriptFile.absolutePath} > /dev/null 2>&1 &")
+        isOtaBlockerRunning = true
+        updateServiceState()
+    }
+
+    private suspend fun stopOtaBlocker() {
+        RootUtils.runAsRoot("pkill -f ota_blocker.sh || true")
+        isOtaBlockerRunning = false
+        updateServiceState()
+    }
+
     private fun isAnyTweakRunning(): Boolean {
-        return isRgbRunning || isCustomLedRunning || isPowerLedRunning || isMinFreqRunning || isInterceptorRunning || isUsbInterceptorRunning || isGpuMinFreqRunning || isGpuMaxFreqRunning || isFridaRunning
+        return isRgbRunning || isCustomLedRunning || isPowerLedRunning || isMinFreqRunning || isInterceptorRunning || isUsbInterceptorRunning || isOtaBlockerRunning || isGpuMinFreqRunning || isGpuMaxFreqRunning || isFridaRunning
     }
     
     private suspend fun stopAllTweaksAndService() {
@@ -473,6 +527,7 @@ class TweakService : Service() {
         stopGpuMaxFreq()
         stopInterceptor()
         stopUsbInterceptor()
+        stopOtaBlocker()
         stopFrida()
 
         // Broadcast that all tweaks have been stopped before the service dies.
@@ -561,6 +616,7 @@ class TweakService : Service() {
             putBoolean("power_led_is_running", false)
             putBoolean("intercept_startup_apps", false)
             putBoolean("usb_interceptor_running", false)
+            putBoolean("ota_blocker_running", false)
             putBoolean("min_freq_is_running", false)
             putBoolean("gpu_min_freq_is_running", false)
             putBoolean("gpu_max_freq_is_running", false)
@@ -577,6 +633,7 @@ class TweakService : Service() {
             RootUtils.runAsRoot("pkill -f ${GpuUtils.GPU_MAX_FREQ_SCRIPT_NAME} || true")
             RootUtils.runAsRoot("pkill -f interceptor.sh || true")
             RootUtils.runAsRoot("pkill -f usb_interceptor.sh || true")
+            RootUtils.runAsRoot("pkill -f ota_blocker.sh || true")
             RootUtils.runAsRoot("pkill -f frida-server || true")
         }
     }

@@ -231,6 +231,15 @@ class BootReceiver : BroadcastReceiver() {
                 context.startService(serviceIntent)
             }
 
+            // --- OTA Blocker Boot Logic ---
+            val otaBlockerOnBoot = sharedPrefs.getBoolean("ota_blocker_on_boot", false)
+            if (otaBlockerOnBoot) {
+                val serviceIntent = Intent(context, TweakService::class.java).apply {
+                    action = TweakService.ACTION_START_OTA_BLOCKER
+                }
+                context.startService(serviceIntent)
+            }
+
             // --- Proxy Sensor Boot Logic ---
             if (proxSensorDisabled) {
                 scope.launch {
