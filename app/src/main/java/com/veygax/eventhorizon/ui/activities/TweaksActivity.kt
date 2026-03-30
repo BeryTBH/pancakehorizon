@@ -1134,58 +1134,66 @@ fun TweaksScreen(
                                 }
                             }
                             if (isRooted) {
-                                item {
-                                    TweakCard("Meta Domain Blocker", "Blocks Meta domains using bind mounting") {
-                                        Column(modifier = Modifier.width(IntrinsicSize.Max)) {
-                                            
-                                            // --- Enable on Boot Toggle ---
-                                            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
-                                                Text("Enable on Boot", style = MaterialTheme.typography.bodyMedium)
-                                                Switch(
-                                                    checked = isRootBlockerOnBoot,
-                                                    onCheckedChange = { isEnabled ->
-                                                        isRootBlockerOnBoot = isEnabled
-                                                        blockerOnBoot = isEnabled
-                                                        val editor = sharedPrefs.edit()
-                                                        editor.putBoolean("root_blocker_on_boot", isEnabled)
-                                                        editor.putBoolean("blocker_on_boot", isEnabled)
-                                                        editor.apply()
-                                                        showSnack(if (isEnabled) "Blocker on Boot Enabled" else "Blocker on Boot Disabled")
-                                                    },
-                                                    // Disable this switch if the blocker hasn't been set up yet
-                                                    enabled = isRooted && isRootBlockerSetup
-                                                )
-                                            }
+                            item {
+                                val blockerDesc = if (isUnlockedBootloader) {
+                                    "Temporarily disabled for unlocked bootloaders to prevent system instability."
+                                } else {
+                                    "Blocks Meta domains using bind mounting"
+                                }
                             
-                                            Spacer(Modifier.height(8.dp))
+                                TweakCard("Meta Domain Blocker", blockerDesc) {
+                                    Column(modifier = Modifier.width(IntrinsicSize.Max)) {
+                                        
+                                        // --- Enable on Boot Toggle ---
+                                        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+                                            Text("Enable on Boot", style = MaterialTheme.typography.bodyMedium)
+                                            Switch(
+                                                checked = isRootBlockerOnBoot && !isUnlockedBootloader,
+                                                onCheckedChange = { isEnabled ->
+                                                    isRootBlockerOnBoot = isEnabled
+                                                    blockerOnBoot = isEnabled
+                                                    val editor = sharedPrefs.edit()
+                                                    editor.putBoolean("root_blocker_on_boot", isEnabled)
+                                                    editor.putBoolean("blocker_on_boot", isEnabled)
+                                                    editor.apply()
+                                                    showSnack(if (isEnabled) "Blocker on Boot Enabled" else "Blocker on Boot Disabled")
+                                                },
+                                                // Disable this switch if the blocker hasn't been set up yet OR if bootloader is unlocked
+                                                enabled = isRooted && isRootBlockerSetup && !isUnlockedBootloader
+                                            )
+                                        }
                             
-                                            // --- Setup vs Config/Status UI ---
-                                            if (!isRootBlockerSetup) {
-                                                // Show Setup Button for first-time use
-                                                Button(
-                                                    onClick = {
-                                                        // Mark as setup so the full UI unlocks
-                                                        sharedPrefs.edit().putBoolean("root_blocker_setup", true).apply()
-                                                        isRootBlockerSetup = true
-                                                        
-                                                        // Launch the new activity to configure domains
-                                                        context.startActivity(Intent(context, DomainBlockerActivity::class.java))
-                                                    },
-                                                    modifier = Modifier.fillMaxWidth()
-                                                ) {
-                                                    Text("Setup Blocker")
-                                                }
-                                            } else {
-                                                // Show Config Button and Start/Stop Toggle once set up
-                                                Row(
-                                                    modifier = Modifier.fillMaxWidth(),
-                                                    horizontalArrangement = Arrangement.SpaceEvenly,
-                                                    verticalAlignment = Alignment.CenterVertically
-                                                ) {
-                                                    Button(onClick = {
-                                                        context.startActivity(Intent(context, DomainBlockerActivity::class.java))
-                                                    }) {
-                                                        Text("Config")
+                                        Spacer(Modifier.height(8.dp))
+                            
+                                        // --- Setup vs Config/Status UI ---
+                                        if (!isUnlockedBootloader) {
+                                                if (!isRootBlockerSetup) {
+                                                    // Show Setup Button for first-time use
+                                                    Button(
+                                                        onClick = {
+                                                            // Mark as setup so the full UI unlocks
+                                                            sharedPrefs.edit().putBoolean("root_blocker_setup", true).apply()
+                                                            isRootBlockerSetup = true
+
+                                                            // Launch the new activity to configure domains
+                                                            context.startActivity(Intent(context, DomainBlockerActivity::class.java))
+                                                        },
+                                                        modifier = Modifier.fillMaxWidth()
+                                                    ) {
+                                                        Text("Setup Blocker")
+                                                    }
+                                                } else {
+                                                    // Show Config Button once set up
+                                                    Row(
+                                                        modifier = Modifier.fillMaxWidth(),
+                                                        horizontalArrangement = Arrangement.SpaceEvenly,
+                                                        verticalAlignment = Alignment.CenterVertically
+                                                    ) {
+                                                        Button(onClick = {
+                                                            context.startActivity(Intent(context, DomainBlockerActivity::class.java))
+                                                        }) {
+                                                            Text("Config")
+                                                        }
                                                     }
                                                 }
                                             }

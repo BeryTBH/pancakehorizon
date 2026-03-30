@@ -38,6 +38,7 @@ class BootReceiver : BroadcastReceiver() {
             val proxSensorDisabled = sharedPrefs.getBoolean("prox_sensor_disabled", false)
             val isLockUpdateFoldersActive = sharedPrefs.getBoolean("lock_update_folders_is_locked", false)
             val passthroughFixOnBoot = sharedPrefs.getBoolean("passthrough_fix_on_boot", false)
+            val isUnlocked = sharedPrefs.getBoolean("is_unlocked_bootloader", false)
             val telemetryDisabledOnBoot = sharedPrefs.getBoolean(TweakCommands.TELEMETRY_TOGGLE_KEY, false)
             val gpuMinFreqOnBoot = sharedPrefs.getBoolean("gpu_min_freq_on_boot", false)
             val gpuMaxFreqOnBoot = sharedPrefs.getBoolean("gpu_max_freq_on_boot", false)
@@ -163,7 +164,13 @@ class BootReceiver : BroadcastReceiver() {
             }
 
             // --- Domain Blocker Boot Logic ---
-            if (isRootBlockerEnabledOnBoot && isRootBlockerSetup) {
+            if (isUnlocked) {
+                Log.w("BootReceiver", "Unlocked bootloader detected. Force-disabling Domain Blocker to prevent instability.")
+                sharedPrefs.edit()
+                    .putBoolean("root_blocker_on_boot", false)
+                    .putBoolean("root_blocker_is_running", false)
+                    .apply()
+            } else if (isRootBlockerEnabledOnBoot && isRootBlockerSetup) {
                 scope.launch {
                     delay(5000) 
                     if (RootUtils.isRootAvailable()) {
@@ -176,7 +183,7 @@ class BootReceiver : BroadcastReceiver() {
                             return@launch
                         }
                         Log.i("BootReceiver", "Applying categorized domain blocker...")
-
+            
                         val success = DomainBlockerManager.generateAndApplyHosts(context, isBootTrigger = true)
                         if (success) {
                             sharedPrefs.edit().putBoolean("root_blocker_is_running", true).apply()
