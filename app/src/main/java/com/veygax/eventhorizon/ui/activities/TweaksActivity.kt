@@ -741,6 +741,7 @@ fun TweaksScreen(
                     putBoolean("gpu_min_freq_is_running", states.isGpuMinFreqExecuting)
                     putBoolean("gpu_max_freq_is_running", states.isGpuMaxFreqExecuting)
                     putBoolean("intercept_startup_apps", states.isInterceptorEnabled)
+                    putBoolean("usb_interceptor_running", states.isUsbInterceptorEnabled)
                     putBoolean("ota_blocker_running", states.isOtaBlockerActive)
                     putBoolean("root_blocker_is_running", states.isRootBlockerManuallyEnabled)
                     putBoolean("wireless_adb_is_running", states.isWirelessAdbEnabled)

@@ -489,12 +489,14 @@ class TweakService : Service() {
         RootUtils.runAsRoot("chmod +x ${usbInterceptorScriptFile.absolutePath}")
         RootUtils.runAsRoot("nohup ${usbInterceptorScriptFile.absolutePath} > /dev/null 2>&1 &")
         isUsbInterceptorRunning = true
+        sharedPrefs.edit().putBoolean("usb_interceptor_running", true).apply()
         updateServiceState()
     }
 
     private suspend fun stopUsbInterceptor() {
         RootUtils.runAsRoot("pkill -f usb_interceptor.sh || true")
         isUsbInterceptorRunning = false
+        sharedPrefs.edit().putBoolean("usb_interceptor_running", false).apply()
         updateServiceState()
     }
 
