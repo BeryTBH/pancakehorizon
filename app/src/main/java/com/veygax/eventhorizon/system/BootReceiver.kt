@@ -164,27 +164,13 @@ class BootReceiver : BroadcastReceiver() {
             }
 
             // --- Domain Blocker Boot Logic ---
-            if (isUnlocked) {
-                Log.w("BootReceiver", "Unlocked bootloader detected. Force-disabling Domain Blocker to prevent instability.")
-                sharedPrefs.edit()
-                    .putBoolean("root_blocker_on_boot", false)
-                    .putBoolean("root_blocker_is_running", false)
-                    .apply()
-            } else if (isRootBlockerEnabledOnBoot && isRootBlockerSetup) {
+            if (isRootBlockerEnabledOnBoot && isRootBlockerSetup) {
                 scope.launch {
                     delay(5000) 
                     if (RootUtils.isRootAvailable()) {
-                        // Check if this boot was caused by a manual user toggle soft-reboot
-                        val isManualToggle = RootUtils.runAsRoot("getprop sys.eh.manual_toggle").trim() == "1"
-                        
-                        if (isManualToggle) {
-                            Log.i("BootReceiver", "Skipping boot blocker logic due to manual toggle soft reboot.")
-                            RootUtils.runAsRoot("setprop sys.eh.manual_toggle 0")
-                            return@launch
-                        }
                         Log.i("BootReceiver", "Applying categorized domain blocker...")
             
-                        val success = DomainBlockerManager.generateAndApplyHosts(context, isBootTrigger = true)
+                        val success = DomainBlockerManager.generateAndApplyHosts(context)
                         if (success) {
                             sharedPrefs.edit().putBoolean("root_blocker_is_running", true).apply()
                             
