@@ -36,7 +36,6 @@ class BootReceiver : BroadcastReceiver() {
             val isRootBlockerSetup = sharedPrefs.getBoolean("root_blocker_setup", false)
             val usbInterceptorOnBoot = sharedPrefs.getBoolean("usb_interceptor_on_boot", false)
             val proxSensorDisabled = sharedPrefs.getBoolean("prox_sensor_disabled", false)
-            val isLockUpdateFoldersActive = sharedPrefs.getBoolean("lock_update_folders_is_locked", false)
             val passthroughFixOnBoot = sharedPrefs.getBoolean("passthrough_fix_on_boot", false)
             val isUnlocked = sharedPrefs.getBoolean("is_unlocked_bootloader", false)
             val telemetryDisabledOnBoot = sharedPrefs.getBoolean(TweakCommands.TELEMETRY_TOGGLE_KEY, false)
@@ -210,17 +209,6 @@ class BootReceiver : BroadcastReceiver() {
             } else {
                 scope.launch {
                     RootUtils.runAsRoot("am broadcast -a com.oculus.vrpowermanager.automation_disable")
-                }
-            }
-
-            // --- OTA Folder Lock Boot Logic ---
-            if (isLockUpdateFoldersActive) {
-                scope.launch {
-                    if (RootUtils.isRootAvailable()) {
-                        RootUtils.runAsRoot("mkdir -p /data/data/com.oculus.updater /data/ota /data/ota_package", useMountMaster = true)
-                        RootUtils.runAsRoot("chmod 000 /data/data/com.oculus.updater /data/ota /data/ota_package", useMountMaster = true)
-                        sharedPrefs.edit().putBoolean("lock_update_folders_is_locked", true).apply()
-                    }
                 }
             }
 
