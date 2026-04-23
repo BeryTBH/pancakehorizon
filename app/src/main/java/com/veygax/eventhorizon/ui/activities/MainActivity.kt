@@ -426,7 +426,7 @@ fun EventHorizonApp(
         
             Spacer(modifier = Modifier.height(12.dp))
 
-            if (mainActivity.isPatched()) {
+            if (!isUnlockedBootloader && mainActivity.isPatched()) {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
@@ -452,7 +452,7 @@ fun EventHorizonApp(
                 Spacer(modifier = Modifier.height(12.dp))
             }
         
-            if (!mainActivity.isSupportedDevice()) {
+            if (!isUnlockedBootloader && !mainActivity.isSupportedDevice()) {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
