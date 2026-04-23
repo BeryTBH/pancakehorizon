@@ -72,7 +72,9 @@ object StatusChecks {
     private const val PREFIX_OTA_BLOCK = "CHECK_OTA_BLOCK:"
     private const val PREFIX_CPU_GOV = "CHECK_CPU_GOV:"
     private const val PREFIX_ADB_PORT = "CHECK_ADB_PORT:"
-    private const val PREFIX_UI_STATE = "CHECK_UI_STATE:"
+    private const val PREFIX_UI_STATE_V0 = "CHECK_UI_STATE_V0:"
+    private const val PREFIX_UI_STATE_V1 = "CHECK_UI_STATE_V1:"
+    private const val PREFIX_UI_BOOT_CFG = "CHECK_UI_BOOT_CFG:"
     private const val PREFIX_TRANS = "CHECK_TRANS:"
     private const val PREFIX_TELEPORT = "CHECK_TELEPORT:"
     private const val PREFIX_FOG = "CHECK_FOG:"
@@ -98,7 +100,9 @@ object StatusChecks {
         echo "${PREFIX_ADB_PORT}$(getprop service.adb.tcp.port 2>/dev/null || echo '-1')"
 
         # Oculus Preference States
-        echo "${PREFIX_UI_STATE}$(oculuspreferences --getc debug_navigator_state 2>/dev/null || echo 'state: 0')"
+        echo "${PREFIX_UI_STATE_V0}$(oculuspreferences --getc debug_navigator_state 2>/dev/null)"
+        echo "${PREFIX_UI_STATE_V1}$(oculuspreferences --getc debug_navigator_state_v1 2>/dev/null)"
+        echo "${PREFIX_UI_BOOT_CFG}$(cat /sdcard/boot_config.json 2>/dev/null)"
         echo "${PREFIX_TRANS}$(oculuspreferences --getc shell_immersive_transitions_enabled 2>/dev/null || echo 'state: true')"
         echo "${PREFIX_TELEPORT}$(oculuspreferences --getc shell_teleport_anywhere 2>/dev/null || echo 'state: false')"
         echo "${PREFIX_FOG}$(oculuspreferences --getc navigator_background_disabled 2>/dev/null || echo 'state: true')"
@@ -107,6 +111,12 @@ object StatusChecks {
         echo "${PREFIX_NO_CONTROLLER}$(oculuspreferences --getc vrshell_skip_launchcheck_requires_controllers_enabled 2>/dev/null || echo 'state: false')"
         echo "${PREFIX_FRIDA}$(ps -ef | grep frida-server | grep -v grep)"
     """.trimIndent()
+
+    enum class NavigatorMode {
+        PREF_V0,      // Uses "debug_navigator_state"
+        PREF_V1,      // Uses "debug_navigator_state_v1"
+        BOOT_CONFIG,  // Neither pref exists; uses boot_config.json + boot overrides
+    }
 
     // Data class to hold all raw results
     data class TweakStates(
@@ -122,7 +132,8 @@ object StatusChecks {
         var isRootBlockerManuallyEnabled: Boolean = false,
         var isCpuPerfMode: Boolean = false,
         var isWirelessAdbEnabled: Boolean = false,
-        var uiSwitchState: Int = 0,
+        var uiSwitchState: Int = 1,
+        var navigatorMode: NavigatorMode = NavigatorMode.BOOT_CONFIG,
         var isVoidTransitionEnabled: Boolean = false,
         var isTeleportLimitDisabled: Boolean = false,
         var isNavigatorFogEnabled: Boolean = false,
@@ -138,6 +149,27 @@ object StatusChecks {
         try {
             val rawOutput = RootUtils.runAsRoot(getCombinedStatusCommand(), useMountMaster = true)
 
+            val bootCfgRaw = StringBuilder()
+            var inBootCfg = false
+
+            rawOutput.lineSequence().forEach { line ->
+                when {
+                    line.startsWith(PREFIX_UI_BOOT_CFG) -> {
+                        inBootCfg = true
+                        bootCfgRaw.append(line.substringAfter(PREFIX_UI_BOOT_CFG))
+                    }
+                    inBootCfg && line.startsWith("CHECK_") -> {
+                        inBootCfg = false
+                    }
+                    inBootCfg -> {
+                        bootCfgRaw.append("\n").append(line)
+                    }
+                    else -> { /* handled below */ }
+                }
+            }
+
+            var v0Line = ""
+            var v1Line = ""
             rawOutput.lineSequence().forEach { line ->
                 when {
                     // Script States (running if output is not blank)
@@ -174,9 +206,8 @@ object StatusChecks {
                     line.startsWith(PREFIX_ADB_PORT) -> {
                         states.isWirelessAdbEnabled = line.substringAfter(PREFIX_ADB_PORT).trim() == "5555"
                     }
-                    line.startsWith(PREFIX_UI_STATE) -> {
-                        states.uiSwitchState = if (line.contains(": 1")) 1 else 0
-                    }
+                    line.startsWith(PREFIX_UI_STATE_V0) -> { v0Line = line.substringAfter(PREFIX_UI_STATE_V0) }
+                    line.startsWith(PREFIX_UI_STATE_V1) -> { v1Line = line.substringAfter(PREFIX_UI_STATE_V1) }
                     line.startsWith(PREFIX_TRANS) -> {
                         states.isVoidTransitionEnabled = line.contains(": false")
                     }
@@ -200,6 +231,42 @@ object StatusChecks {
                     }
                 }
             }
+
+            // --- Determine Navigator mode and current state ---
+            val v0Failed = v0Line.contains("OTHERS_FAILED") || v0Line.isBlank()
+            val v1Failed = v1Line.contains("OTHERS_FAILED") || v1Line.isBlank()
+
+            when {
+                !v0Failed -> {
+                    // debug_navigator_state
+                    states.navigatorMode = NavigatorMode.PREF_V0
+                    states.uiSwitchState = if (v0Line.contains(": 1")) 1 else 0
+                }
+                !v1Failed -> {
+                    // debug_navigator_state_v1
+                    states.navigatorMode = NavigatorMode.PREF_V1
+                    states.uiSwitchState = if (v1Line.contains(": 1")) 1 else 0
+                }
+                else -> {
+                    // neither pref exists, use boot_config.json
+                    states.navigatorMode = NavigatorMode.BOOT_CONFIG
+                    val bootCfgStr = bootCfgRaw.toString().trim()
+                    if (bootCfgStr.isNotBlank()) {
+                        try {
+                            val json = org.json.JSONObject(bootCfgStr)
+                            val sysConfig = json.optJSONObject("systemConfiguration")
+                            val navigatorEnabled = sysConfig?.optBoolean("navigatorEnabled", true) ?: true
+                            states.uiSwitchState = if (navigatorEnabled) 1 else 0
+                        } catch (e: Exception) {
+                            Log.w("StatusChecks", "Could not parse boot_config.json for navigator state", e)
+                            states.uiSwitchState = 1
+                        }
+                    } else {
+                        states.uiSwitchState = 1
+                    }
+                }
+            }
+
         } catch (e: Exception) {
             Log.e("StatusChecks", "Error running bulk root commands", e)
         }
@@ -513,8 +580,19 @@ fun TweaksScreen(
     var passthroughFixOnBoot by rememberSaveable { mutableStateOf(initialPassthroughFixOnBoot) }
 
     // System UI
-    val initialUiSwitchState = sharedPrefs.getInt("ui_switch_state", 0)
+    val initialUiSwitchState = sharedPrefs.getInt("ui_switch_state", 1)
     var uiSwitchState by rememberSaveable { mutableStateOf(initialUiSwitchState) }
+    var navigatorMode by remember {
+        mutableStateOf(
+            try {
+                StatusChecks.NavigatorMode.valueOf(
+                    sharedPrefs.getString("navigator_mode", StatusChecks.NavigatorMode.BOOT_CONFIG.name)!!
+                )
+            } catch (e: Exception) {
+                StatusChecks.NavigatorMode.BOOT_CONFIG
+            }
+        )
+    }
     val initialVoidTransitionEnabled = getInitialState("transition_void_enabled")
     var isVoidTransitionEnabled by rememberSaveable { mutableStateOf(initialVoidTransitionEnabled) }
     val initialTeleportLimitDisabled = getInitialState("teleport_limit_disabled")
@@ -578,6 +656,7 @@ fun TweaksScreen(
                             putBoolean("root_blocker_is_running", states.isRootBlockerManuallyEnabled)
                             putBoolean("wireless_adb_is_running", states.isWirelessAdbEnabled)
                             putInt("ui_switch_state", states.uiSwitchState)
+                            putString("navigator_mode", states.navigatorMode.name)
                             putBoolean("transition_void_enabled", states.isVoidTransitionEnabled)
                             putBoolean("teleport_limit_disabled", states.isTeleportLimitDisabled)
                             putBoolean("navigator_fog_enabled", states.isNavigatorFogEnabled)
@@ -608,6 +687,7 @@ fun TweaksScreen(
                             isCpuPerfMode = states.isCpuPerfMode
                             isWirelessAdbEnabled = states.isWirelessAdbEnabled
                             uiSwitchState = states.uiSwitchState
+                            navigatorMode = states.navigatorMode
                             isVoidTransitionEnabled = states.isVoidTransitionEnabled
                             isTeleportLimitDisabled = states.isTeleportLimitDisabled
                             isNavigatorFogEnabled = states.isNavigatorFogEnabled
@@ -664,6 +744,35 @@ fun TweaksScreen(
         }
     }
 
+    val setNavigatorState: suspend (Boolean) -> Unit = { enable ->
+        when (navigatorMode) {
+            StatusChecks.NavigatorMode.PREF_V0 -> {
+                val command = if (enable) TweakCommands.SET_UI_NAVIGATOR_V0 else TweakCommands.SET_UI_DOCK_V0
+                runCommandWithWifiToggleIfNeeded(command)
+            }
+            StatusChecks.NavigatorMode.PREF_V1 -> {
+                val command = if (enable) TweakCommands.SET_UI_NAVIGATOR_V1 else TweakCommands.SET_UI_DOCK_V1
+                runCommandWithWifiToggleIfNeeded(command)
+            }
+            StatusChecks.NavigatorMode.BOOT_CONFIG -> {
+                val existingRaw = RootUtils.runAsRoot("cat /sdcard/boot_config.json 2>/dev/null")
+                val rootJson = if (existingRaw.isNotBlank() && !existingRaw.contains("No such file")) {
+                    try { org.json.JSONObject(existingRaw) } catch (e: Exception) { org.json.JSONObject() }
+                } else {
+                    org.json.JSONObject()
+                }
+
+                val sysConfig = rootJson.optJSONObject("systemConfiguration") ?: org.json.JSONObject()
+                sysConfig.put("navigatorEnabled", enable)
+                rootJson.put("systemConfiguration", sysConfig)
+
+                RootUtils.runAsRoot(LaunchCommands.ENABLE_BOOT_OVERRIDES)
+                RootUtils.runAsRoot("echo '${rootJson.toString(4)}' > /sdcard/boot_config.json")
+                runCommandWithWifiToggleIfNeeded("am force-stop com.oculus.vrshell")
+            }
+        }
+    }
+
     // Prepare the script file in the background on startup
     LaunchedEffect(Unit) {
         // Always write/overwrite the script on launch to ensure it's up-to-date
@@ -696,6 +805,7 @@ fun TweaksScreen(
                     putBoolean("root_blocker_is_running", states.isRootBlockerManuallyEnabled)
                     putBoolean("wireless_adb_is_running", states.isWirelessAdbEnabled)
                     putInt("ui_switch_state", states.uiSwitchState)
+                    putString("navigator_mode", states.navigatorMode.name)
                     putBoolean("transition_void_enabled", states.isVoidTransitionEnabled)
                     putBoolean("teleport_limit_disabled", states.isTeleportLimitDisabled)
                     putBoolean("navigator_fog_enabled", states.isNavigatorFogEnabled)
@@ -705,7 +815,7 @@ fun TweaksScreen(
                     putBoolean("frida_is_running", states.isFridaServerActive)
                     apply()
                 }
-                
+
                 activity.isRainbowLedActiveState.value = states.isRainbowLedActive
                 activity.isCustomLedActiveState.value = states.isCustomLedActive
                 activity.isPowerLedActiveState.value = states.isPowerLedActive
@@ -718,6 +828,7 @@ fun TweaksScreen(
                 isCpuPerfMode = states.isCpuPerfMode
                 isWirelessAdbEnabled = states.isWirelessAdbEnabled
                 uiSwitchState = states.uiSwitchState
+                navigatorMode = states.navigatorMode
                 isVoidTransitionEnabled = states.isVoidTransitionEnabled
                 isTeleportLimitDisabled = states.isTeleportLimitDisabled
                 isNavigatorFogEnabled = states.isNavigatorFogEnabled
@@ -1567,8 +1678,10 @@ fun TweaksScreen(
                                                 uiSwitchState = newState
                                                 sharedPrefs.edit().putInt("ui_switch_state", newState).apply()
                                                 coroutineScope.launch(Dispatchers.IO) {
-                                                    val command = if (isNavigator) TweakCommands.SET_UI_NAVIGATOR else TweakCommands.SET_UI_DOCK
-                                                    runCommandWithWifiToggleIfNeeded(command)
+                                                    setNavigatorState(isNavigator)
+                                                    withContext(Dispatchers.Main) {
+                                                        showSnack(if (isNavigator) "Navigator UI enabled" else "Dock UI enabled")
+                                                    }
                                                 }
                                             },
                                             enabled = isRooted
@@ -2163,8 +2276,10 @@ object TweakCommands {
     const val DISABLE_NAVIGATOR_FOG = "oculuspreferences --setc navigator_background_disabled true\nam force-stop com.oculus.vrshell"
     const val ENABLE_PANEL_SCALING = "oculuspreferences --setc panel_scaling true\nam force-stop com.oculus.vrshell"
     const val DISABLE_PANEL_SCALING = "oculuspreferences --setc panel_scaling false\nam force-stop com.oculus.vrshell"
-    const val SET_UI_DOCK = "oculuspreferences --setc debug_navigator_state 0\nam force-stop com.oculus.vrshell"
-    const val SET_UI_NAVIGATOR = "oculuspreferences --setc debug_navigator_state 1\nam force-stop com.oculus.vrshell"
+    const val SET_UI_DOCK_V0 = "oculuspreferences --setc debug_navigator_state 0\nam force-stop com.oculus.vrshell"
+    const val SET_UI_NAVIGATOR_V0 = "oculuspreferences --setc debug_navigator_state 1\nam force-stop com.oculus.vrshell"
+    const val SET_UI_DOCK_V1 = "oculuspreferences --setc debug_navigator_state_v1 0\nam force-stop com.oculus.vrshell"
+    const val SET_UI_NAVIGATOR_V1 = "oculuspreferences --setc debug_navigator_state_v1 1\nam force-stop com.oculus.vrshell"
     const val SET_TRANSITION_IMMERSIVE = "oculuspreferences --setc shell_immersive_transitions_enabled true\nam force-stop com.oculus.vrshell"
     const val SET_TRANSITION_VOID = "oculuspreferences --setc shell_immersive_transitions_enabled false\nam force-stop com.oculus.vrshell"
     const val ENABLE_INFINITE_PANELS = "oculuspreferences --setc debug_infinite_spatial_panels_enabled true\nam force-stop com.oculus.vrshell"
