@@ -135,9 +135,41 @@ fun AppsScreen() {
 
     // --- App Launcher ---
     val saveAppToLaunchOnBoot: (String?) -> Unit = { packageName ->
+        val targetPackageName = if (packageName.isNullOrBlank()) "com.oculus.store" else packageName
+
         appToLaunchOnBoot = packageName
         sharedPrefs.edit().putString("start_app_on_boot", packageName).apply()
         showSideloadedAppDialog = false
+
+        coroutineScope.launch(Dispatchers.IO) {
+            try {
+                val existingConfigRaw = RootUtils.runAsRoot("cat /sdcard/boot_config.json")
+                val rootJson = if (existingConfigRaw.isNotBlank() && !existingConfigRaw.contains("No such file")) {
+                    try { JSONObject(existingConfigRaw) } catch (e: Exception) { JSONObject() }
+                } else {
+                    JSONObject()
+                }
+
+                val appSet = rootJson.optJSONObject("defaultVrAppSet") ?: JSONObject()
+                val primaryApp = JSONObject().put("component", targetPackageName)
+
+                appSet.put("primaryApplication", primaryApp)
+                appSet.put("secondaryApps", org.json.JSONArray())
+                appSet.put("launchPolicy", "first-time")
+
+                rootJson.put("defaultVrAppSet", appSet)
+
+                RootUtils.runAsRoot(LaunchCommands.ENABLE_BOOT_OVERRIDES)
+
+                val formattedJsonString = rootJson.toString(4)
+
+                RootUtils.runAsRoot("echo '$formattedJsonString' > /sdcard/boot_config.json")
+    
+                Log.d("AppsActivity", "Boot config updated successfully with app: $targetPackageName")
+            } catch (e: Exception) {
+                Log.e("AppsActivity", "Failed to update boot config: ${e.message}")
+            }
+        }
     }
 
     // --- APK Installer ---
@@ -309,7 +341,7 @@ fun AppsScreen() {
             }
         }
     }
-    
+
     // Trigger refresh when toggle is enabled
     LaunchedEffect(isPreventAutoInstallEnabled) {
         if (isPreventAutoInstallEnabled) {
@@ -454,7 +486,7 @@ fun AppsScreen() {
                             }
                             item {
                                 AppCard("Start App on Boot",
-                                    "Select an app to automatically launch on boot\nCurrent: ${if (appToLaunchOnBoot.isNullOrBlank()) "None" else appToLaunchOnBoot}") {
+                                    "Select an app to automatically launch on boot\nCurrent: ${if (appToLaunchOnBoot.isNullOrBlank()) "Meta Store (Default)" else appToLaunchOnBoot}") {
                                     Row {
                                         val isAppSelected = !appToLaunchOnBoot.isNullOrBlank()
                                         val buttonText = if (isAppSelected) "Clear" else "Select"
@@ -827,7 +859,10 @@ object LaunchCommands {
     const val LAUNCH_DOGFOOD_HUB = "am start com.oculus.vrshell/com.oculus.panelapp.dogfood.DogfoodMainActivity"
     const val LAUNCH_ANDROID_SETTINGS = "am start -n com.android.settings/.Settings"
     const val LAUNCH_FILE_MANAGER = "am start -n com.android.documentsui/.files.FilesActivity"
-    
+
+    const val ENABLE_BOOT_OVERRIDES = "oculuspreferences --setc debug_enable_boot_configuration_overrides true"
+    const val DISABLE_BOOT_OVERRIDES = "oculuspreferences --setc debug_enable_boot_configuration_overrides false"
+
     const val DISABLE_AUTO_INSTALL_SERVICES = """
         setprop persist.ocms.post_nux_default_apps_install_enabled 0
         am force-stop com.oculus.ocms
@@ -836,7 +871,7 @@ object LaunchCommands {
         pm disable com.oculus.ocms/com.oculus.ocms.installer2.service.Installer2StatusReceiver
         pm disable com.oculus.ocms/com.oculus.ocms.library.service.BinaryCheckUpdateIntentService
     """
-    
+
     const val ENABLE_AUTO_INSTALL_SERVICES = """
         setprop persist.ocms.post_nux_default_apps_install_enabled 1
         am force-stop com.oculus.ocms
