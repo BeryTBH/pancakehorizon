@@ -12,8 +12,8 @@ android {
         applicationId = "com.veygax.eventhorizon"
         minSdk = 24
         targetSdk = 36
-        versionCode = 19
-        versionName = "2.3.6.2"
+        versionCode = 20
+        versionName = "2.3.7"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
