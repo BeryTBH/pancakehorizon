@@ -471,6 +471,17 @@ fun AppsScreen() {
                                 }
                             }
                             item {
+                                AppCard("Shell Debug", "Launches employee only debug configuration") {
+                                    Button(onClick = {
+                                        coroutineScope.launch { 
+                                            RootUtils.runAsRoot(LaunchCommands.LAUNCH_SHELL_DEBUG) 
+                                        }
+                                    }) { 
+                                        Text("Launch") 
+                                    }
+                                }
+                            }
+                            item {
                                 AppCard("Android Settings", "Launches the Android settings app") {
                                     Button(onClick = {
                                         coroutineScope.launch { RootUtils.runAsRoot(LaunchCommands.LAUNCH_ANDROID_SETTINGS) }
@@ -857,6 +868,7 @@ object LaunchCommands {
     const val ENABLE_DOGFOOD_STEP_2 = "am broadcast -a oculus.intent.action.DC_OVERRIDE --esa config_param_value oculus_systemshell:oculus_is_trusted_user:true\nstop\nstart"
     const val DISABLE_DOGFOOD_HUB = "magisk resetprop --delete ro.build.type\nstop\nstart"
     const val LAUNCH_DOGFOOD_HUB = "am start com.oculus.vrshell/com.oculus.panelapp.dogfood.DogfoodMainActivity"
+    const val LAUNCH_SHELL_DEBUG = "am start -n com.oculus.vrshell/com.oculus.panelapp.debug.ShellDebugActivity"
     const val LAUNCH_ANDROID_SETTINGS = "am start -n com.android.settings/.Settings"
     const val LAUNCH_FILE_MANAGER = "am start -n com.android.documentsui/.files.FilesActivity"
 
