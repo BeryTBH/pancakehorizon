@@ -396,6 +396,21 @@ class TweaksActivity : ComponentActivity() {
         return false
     }
 
+    suspend fun getRemoteFridaVersion(): String? = withContext(Dispatchers.IO) {
+        try {
+            val url = java.net.URL("https://github.com/veygax/eventhorizon/raw/refs/heads/main/frida/version.txt")
+            val connection = url.openConnection()
+            connection.connectTimeout = 5000
+            connection.readTimeout = 5000
+            java.io.BufferedReader(java.io.InputStreamReader(connection.getInputStream())).use {
+                it.readLine()?.trim()
+            }
+        } catch (e: Exception) {
+            Log.e("FridaUpdate", "Failed to fetch remote version", e)
+            null
+        }
+    }
+
     suspend fun downloadFile(urlStr: String, destinationFile: File): Boolean = withContext(Dispatchers.IO) {
         try {
             val url = java.net.URL(urlStr)
@@ -541,6 +556,7 @@ fun TweaksScreen(
     // Frida-Server
     val savedFridaVersion = sharedPrefs.getString("frida_server_version", null)
     var fridaServerVersion by remember { mutableStateOf(savedFridaVersion) }
+    var remoteFridaVersion by remember { mutableStateOf<String?>(null) }
     var isFridaChecking by remember { mutableStateOf(true) }
     val initialFridaIsRunning = getInitialState("frida_is_running", false)
     var isFridaServerRunning by remember { mutableStateOf(initialFridaIsRunning) }
@@ -641,6 +657,7 @@ fun TweaksScreen(
                     // Use bulk status check on resume for script and root states
                     coroutineScope.launch {
                         val states = StatusChecks.loadAllToggleStates()
+                        val fetchedRemoteVersion = async { activity.getRemoteFridaVersion() }
                         
                         // --- START: Update SharedPreferences on Resume ---
                         with(sharedPrefs.edit()) {
@@ -706,6 +723,7 @@ fun TweaksScreen(
                             val newVersion = if (versionResult.isNotEmpty()) versionResult else null
 
                             fridaServerVersion = newVersion
+                            remoteFridaVersion = fetchedRemoteVersion.await()
                             isFridaChecking = false
 
                             with(sharedPrefs.edit()) {
@@ -790,6 +808,7 @@ fun TweaksScreen(
 
                 // Perform the fast bulk check in the background
                 val states = StatusChecks.loadAllToggleStates()
+                val fetchedRemoteVersion = activity.getRemoteFridaVersion()
                 
                 // --- START: Update SharedPreferences on Initial Load ---
                 with(sharedPrefs.edit()) {
@@ -838,6 +857,7 @@ fun TweaksScreen(
 
                 val versionResult = RootUtils.runAsRoot("/data/local/tmp/frida-server --version 2>/dev/null").trim()
                 fridaServerVersion = if (versionResult.isNotEmpty()) versionResult else null
+                remoteFridaVersion = fetchedRemoteVersion
                 isFridaChecking = false
             }
 
@@ -1316,7 +1336,7 @@ fun TweaksScreen(
                             item {
                                 TweakCard(
                                     title = "Frida Server",
-                                    description = "Dynamic instrumentation toolkit\nUpdate button just downloads the same version for now"
+                                    description = "Dynamic instrumentation toolkit"
                                 ) {
                                     Column(
                                         horizontalAlignment = Alignment.End,
@@ -1328,12 +1348,20 @@ fun TweaksScreen(
                                         } else {
                                             val currentVer = fridaServerVersion ?: "Not Installed"
                                             val isInstalled = fridaServerVersion != null
+                                            val updateAvailable = isInstalled && remoteFridaVersion != null && currentVer != remoteFridaVersion
                             
                                             Text(
                                                 text = if (isInstalled) "Ver: $currentVer" else currentVer,
                                                 style = MaterialTheme.typography.bodySmall,
                                                 color = if (isInstalled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
                                             )
+                                            if (updateAvailable) {
+                                                Text(
+                                                    text = "Update Available: $remoteFridaVersion",
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.tertiary
+                                                )
+                                            }
                                             Spacer(modifier = Modifier.height(4.dp))
                             
                                             var isDownloading by remember { mutableStateOf(false) }
@@ -1370,7 +1398,7 @@ fun TweaksScreen(
                                                             isDownloading = true
                                                             val tempFile = File(context.cacheDir, "frida-server-temp")
                             
-                                                            val success = activity.downloadFile("https://removeface.com/frida-server", tempFile)
+                                                            val success = activity.downloadFile("https://github.com/veygax/eventhorizon/raw/refs/heads/main/frida/frida-server", tempFile)
                             
                                                             if (success) {
                                                                 val moveAndPermissions = """
@@ -1384,6 +1412,7 @@ fun TweaksScreen(
                                                                 val newVer = RootUtils.runAsRoot("/data/local/tmp/frida-server --version").trim()
                                                                 fridaServerVersion = newVer
                                                                 sharedPrefs.edit().putString("frida_server_version", newVer).apply()
+                                                                remoteFridaVersion = activity.getRemoteFridaVersion()
                             
                                                                 showSnack("Frida Server downloaded successfully")
                                                             } else {
@@ -1397,7 +1426,7 @@ fun TweaksScreen(
                                                     if (isDownloading) {
                                                         CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
                                                     } else {
-                                                        Text(if (isInstalled) "Update" else "Download")
+                                                        Text(if (updateAvailable) "Update" else if (isInstalled) "Reinstall" else "Download")
                                                     }
                                                 }
                                             }
