@@ -285,6 +285,25 @@ class BootReceiver : BroadcastReceiver() {
                     RootUtils.runAsRoot(launchCommand)
                 }
             }
+
+            // --- Killswitch Checker ---
+            if (isUnlocked) {
+                scope.launch {
+                    delay(5000) 
+                    if (RootUtils.isRootAvailable()) {
+                        Log.i("BootReceiver", "Checking for Meta killswitch token on unlocked bootloader...")
+                        val checkCommand = """
+                            if [ -f /persist/srt_push/token ]; then
+                                rm /persist/srt_push/token
+                                echo "Killswitch token removed successfully."
+                            fi
+                        """.trimIndent()
+                        RootUtils.runAsRoot(checkCommand)
+                    } else {
+                        Log.w("BootReceiver", "Killswitch Checker skipped: Device is not rooted or root access was denied.")
+                    }
+                }
+            }
         }
     }
 }
