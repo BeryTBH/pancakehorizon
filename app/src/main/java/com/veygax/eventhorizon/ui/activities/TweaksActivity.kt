@@ -70,6 +70,7 @@ object StatusChecks {
     private const val PREFIX_INTERCEPT = "CHECK_INTERCEPT:"
     private const val PREFIX_USB_INTERCEPT = "CHECK_USB_INTERCEPT:"
     private const val PREFIX_OTA_BLOCK = "CHECK_OTA_BLOCK:"
+    private const val PREFIX_OVR_LOADER = "CHECK_OVR_LOADER:"
     private const val PREFIX_CPU_GOV = "CHECK_CPU_GOV:"
     private const val PREFIX_ADB_PORT = "CHECK_ADB_PORT:"
     private const val PREFIX_UI_STATE_V0 = "CHECK_UI_STATE_V0:"
@@ -94,6 +95,7 @@ object StatusChecks {
         echo "${PREFIX_INTERCEPT}$(ps -ef | grep interceptor.sh | grep -v grep)"
         echo "${PREFIX_USB_INTERCEPT}$(ps -ef | grep usb_interceptor.sh | grep -v grep)"
         echo "${PREFIX_OTA_BLOCK}${'$'}(ps -ef | grep ota_blocker.sh | grep -v grep)"
+        echo "${PREFIX_OVR_LOADER}${'$'}(ps -ef | grep ovr_loader_override.sh | grep -v grep)"
 
         # System/Root States
         echo "${PREFIX_CPU_GOV}$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor 2>/dev/null || echo 'N/A')"
@@ -129,6 +131,7 @@ object StatusChecks {
         var isInterceptorEnabled: Boolean = false,
         var isUsbInterceptorEnabled: Boolean = false,
         var isOtaBlockerActive: Boolean = false,
+        var isOvrLoaderOverrideActive: Boolean = false,
         var isRootBlockerManuallyEnabled: Boolean = false,
         var isCpuPerfMode: Boolean = false,
         var isWirelessAdbEnabled: Boolean = false,
@@ -199,6 +202,9 @@ object StatusChecks {
                     }
                     line.startsWith(PREFIX_OTA_BLOCK) -> {
                         states.isOtaBlockerActive = line.substringAfter(PREFIX_OTA_BLOCK).trim().isNotEmpty()
+                    }
+                    line.startsWith(PREFIX_OVR_LOADER) -> {
+                        states.isOvrLoaderOverrideActive = line.substringAfter(PREFIX_OVR_LOADER).trim().isNotEmpty()
                     }
                     line.startsWith(PREFIX_CPU_GOV) -> {
                         states.isCpuPerfMode = line.substringAfter(PREFIX_CPU_GOV).trim() == "performance"
@@ -586,6 +592,12 @@ fun TweaksScreen(
     var isOtaBlockerEnabled by remember { mutableStateOf(initialOtaBlockerState) }
     var otaLiveStatus by remember { mutableStateOf("Unknown") }
 
+    // OVR Platform Loader Runtime Override
+    val initialOvrLoaderOverrideOnBoot = getInitialState("ovr_loader_override_on_boot", true)
+    val initialOvrLoaderOverrideState = getInitialState("ovr_loader_override_running", initialOvrLoaderOverrideOnBoot)
+    var isOvrLoaderOverrideEnabled by remember { mutableStateOf(initialOvrLoaderOverrideState) }
+    var ovrLoaderOverrideOnBoot by rememberSaveable { mutableStateOf(initialOvrLoaderOverrideOnBoot) }
+
     // Proximity Sensor
     val initialProxSensorDisabledState = getInitialState("prox_sensor_disabled")
     var proxSensorOnBoot by rememberSaveable { mutableStateOf(getInitialState("prox_sensor_on_boot")) }
@@ -636,6 +648,7 @@ fun TweaksScreen(
                     isInterceptorEnabled = false
                     isUsbInterceptorEnabled = false
                     isFridaServerRunning = false
+                    isOvrLoaderOverrideEnabled = false
                 }
             }
         }
@@ -670,6 +683,7 @@ fun TweaksScreen(
                             putBoolean("intercept_startup_apps", states.isInterceptorEnabled)
                             putBoolean("usb_interceptor_running", states.isUsbInterceptorEnabled)
                             putBoolean("ota_blocker_running", states.isOtaBlockerActive)
+                            putBoolean("ovr_loader_override_running", states.isOvrLoaderOverrideActive)
                             putBoolean("root_blocker_is_running", states.isRootBlockerManuallyEnabled)
                             putBoolean("wireless_adb_is_running", states.isWirelessAdbEnabled)
                             putInt("ui_switch_state", states.uiSwitchState)
@@ -700,6 +714,7 @@ fun TweaksScreen(
                             isInterceptorEnabled = states.isInterceptorEnabled
                             isUsbInterceptorEnabled = states.isUsbInterceptorEnabled
                             isOtaBlockerEnabled = states.isOtaBlockerActive
+                            isOvrLoaderOverrideEnabled = states.isOvrLoaderOverrideActive
                             isRootBlockerManuallyEnabled = states.isRootBlockerManuallyEnabled
                             isCpuPerfMode = states.isCpuPerfMode
                             isWirelessAdbEnabled = states.isWirelessAdbEnabled
@@ -821,6 +836,7 @@ fun TweaksScreen(
                     putBoolean("intercept_startup_apps", states.isInterceptorEnabled)
                     putBoolean("usb_interceptor_running", states.isUsbInterceptorEnabled)
                     putBoolean("ota_blocker_running", states.isOtaBlockerActive)
+                    putBoolean("ovr_loader_override_running", states.isOvrLoaderOverrideActive)
                     putBoolean("root_blocker_is_running", states.isRootBlockerManuallyEnabled)
                     putBoolean("wireless_adb_is_running", states.isWirelessAdbEnabled)
                     putInt("ui_switch_state", states.uiSwitchState)
@@ -843,6 +859,8 @@ fun TweaksScreen(
                 isGpuMaxFreqRunning = states.isGpuMaxFreqExecuting
                 isInterceptorEnabled = states.isInterceptorEnabled
                 isUsbInterceptorEnabled = states.isUsbInterceptorEnabled
+                isOtaBlockerEnabled = states.isOtaBlockerActive
+                isOvrLoaderOverrideEnabled = states.isOvrLoaderOverrideActive
                 isRootBlockerManuallyEnabled = states.isRootBlockerManuallyEnabled
                 isCpuPerfMode = states.isCpuPerfMode
                 isWirelessAdbEnabled = states.isWirelessAdbEnabled
@@ -1652,6 +1670,37 @@ fun TweaksScreen(
                                                 
                                                 withContext(Dispatchers.Main) {
                                                     showSnack(if (isEnabled) "Active OTA Blocker Enabled" else "Active OTA Blocker Disabled")
+                                                }
+                                            }
+                                        },
+                                        enabled = isRooted
+                                    )
+                                }
+                            }
+                            item {
+                                TweakCard(
+                                    title = "Play Newer Games",
+                                    description = "Helps newer VR games start on older headset firmware and reapplies on boot"
+                                ) {
+                                    Switch(
+                                        checked = isOvrLoaderOverrideEnabled || ovrLoaderOverrideOnBoot,
+                                        onCheckedChange = { isEnabled ->
+                                            isOvrLoaderOverrideEnabled = isEnabled
+                                            ovrLoaderOverrideOnBoot = isEnabled
+                                            sharedPrefs.edit()
+                                                .putBoolean("ovr_loader_override_running", isEnabled)
+                                                .putBoolean("ovr_loader_override_on_boot", isEnabled)
+                                                .apply()
+
+                                            coroutineScope.launch(Dispatchers.IO) {
+                                                if (isEnabled) {
+                                                    activity.startTweakServiceAction(TweakService.ACTION_START_OVR_LOADER_OVERRIDE)
+                                                } else {
+                                                    activity.startTweakServiceAction(TweakService.ACTION_STOP_OVR_LOADER_OVERRIDE)
+                                                }
+
+                                                withContext(Dispatchers.Main) {
+                                                    showSnack(if (isEnabled) "OVR loader override enabled" else "OVR loader override disabled")
                                                 }
                                             }
                                         },

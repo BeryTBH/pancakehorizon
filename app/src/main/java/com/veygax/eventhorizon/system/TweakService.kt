@@ -100,6 +100,62 @@ class TweakService : Service() {
         done
     """.trimIndent()
 
+    private val OVR_LOADER_OVERRIDE_SCRIPT = """
+        #!/system/bin/sh
+        PATCHED="/data/local/tmp/eventhorizon/libovrplatformloader.so"
+        STATUS="/data/local/tmp/eventhorizon/ovr_loader_override_status.txt"
+        TARGETS="/data/local/tmp/eventhorizon/ovr_loader_override_targets.txt"
+        INTERVAL=10
+
+        mkdir -p /data/local/tmp/eventhorizon 2>/dev/null || true
+
+        while true; do
+            mounted=0
+            skipped=0
+            missing=0
+            failed=0
+
+            if [ ! -f "${'$'}PATCHED" ]; then
+                echo "$(date '+%F %T') missing patched loader at ${'$'}PATCHED" > "${'$'}STATUS"
+                : > "${'$'}TARGETS"
+                sleep "${'$'}INTERVAL"
+                continue
+            fi
+
+            : > "${'$'}TARGETS"
+            for target in $(find /data/app -path '*/lib/arm64/libovrplatformloader.so' -type f 2>/dev/null); do
+                if [ ! -f "${'$'}target" ]; then
+                    missing=$((missing + 1))
+                    continue
+                fi
+
+                if mount | grep -F " on ${'$'}target " >/dev/null 2>&1; then
+                    echo "${'$'}target" >> "${'$'}TARGETS"
+                    skipped=$((skipped + 1))
+                    continue
+                fi
+
+                if mount -o bind "${'$'}PATCHED" "${'$'}target" 2>/dev/null; then
+                    echo "${'$'}target" >> "${'$'}TARGETS"
+                    mounted=$((mounted + 1))
+                else
+                    failed=$((failed + 1))
+                fi
+            done
+
+            {
+                echo "time=$(date '+%F %T')"
+                echo "mounted=${'$'}mounted"
+                echo "already_mounted=${'$'}skipped"
+                echo "missing=${'$'}missing"
+                echo "failed=${'$'}failed"
+                echo "patched_sha256=$(sha256sum "${'$'}PATCHED" 2>/dev/null | awk '{print ${'$'}1}')"
+            } > "${'$'}STATUS"
+
+            sleep "${'$'}INTERVAL"
+        done
+    """.trimIndent()
+
     companion object {
         const val ACTION_START_RGB = "com.veygax.eventhorizon.START_RGB"
         const val ACTION_STOP_RGB = "com.veygax.eventhorizon.STOP_RGB"
@@ -129,6 +185,9 @@ class TweakService : Service() {
         const val ACTION_START_OTA_BLOCKER = "com.veygax.eventhorizon.START_OTA_BLOCKER"
         const val ACTION_STOP_OTA_BLOCKER = "com.veygax.eventhorizon.STOP_OTA_BLOCKER"
 
+        const val ACTION_START_OVR_LOADER_OVERRIDE = "com.veygax.eventhorizon.START_OVR_LOADER_OVERRIDE"
+        const val ACTION_STOP_OVR_LOADER_OVERRIDE = "com.veygax.eventhorizon.STOP_OVR_LOADER_OVERRIDE"
+
         const val ACTION_START_WIRELESS_ADB = "com.veygax.eventhorizon.action.START_WIRELESS_ADB"
         const val ACTION_STOP_WIRELESS_ADB = "com.veygax.eventhorizon.action.STOP_WIRELESS_ADB"
         
@@ -147,6 +206,7 @@ class TweakService : Service() {
     private var isInterceptorRunning: Boolean = false
     private var isUsbInterceptorRunning = false
     private var isOtaBlockerRunning = false
+    private var isOvrLoaderOverrideRunning = false
     private var isGpuMinFreqRunning: Boolean = false
     private var isGpuMaxFreqRunning: Boolean = false
     private var isFridaRunning: Boolean = false
@@ -159,6 +219,7 @@ class TweakService : Service() {
     private lateinit var interceptorScriptFile: File
     private lateinit var usbInterceptorScriptFile: File
     private lateinit var otaBlockerScriptFile: File
+    private lateinit var ovrLoaderOverrideScriptFile: File
     private lateinit var gpuMinFreqScriptFile: File
     private lateinit var gpuMaxFreqScriptFile: File
 
@@ -171,6 +232,7 @@ class TweakService : Service() {
         interceptorScriptFile = File(filesDir, "interceptor.sh")
         usbInterceptorScriptFile = File(filesDir, "usb_interceptor.sh")
         otaBlockerScriptFile = File(filesDir, "ota_blocker.sh")
+        ovrLoaderOverrideScriptFile = File(filesDir, "ovr_loader_override.sh")
         gpuMinFreqScriptFile = File(filesDir, GpuUtils.GPU_MIN_FREQ_SCRIPT_NAME)
         gpuMaxFreqScriptFile = File(filesDir, GpuUtils.GPU_MAX_FREQ_SCRIPT_NAME)
 
@@ -191,6 +253,7 @@ class TweakService : Service() {
         val runningInterceptor = RootUtils.runAsRoot("ps -ef | grep interceptor.sh | grep -v grep").trim().isNotEmpty()
         val runningUsbInterceptor = RootUtils.runAsRoot("ps -ef | grep usb_interceptor.sh | grep -v grep").trim().isNotEmpty()
         val runningOtaBlocker = RootUtils.runAsRoot("ps -ef | grep ota_blocker.sh | grep -v grep").trim().isNotEmpty()
+        val runningOvrLoaderOverride = RootUtils.runAsRoot("ps -ef | grep ovr_loader_override.sh | grep -v grep").trim().isNotEmpty()
         val runningGpuMin = RootUtils.runAsRoot("ps -ef | grep ${GpuUtils.GPU_MIN_FREQ_SCRIPT_NAME} | grep -v grep").trim().isNotEmpty()
         val runningGpuMax = RootUtils.runAsRoot("ps -ef | grep ${GpuUtils.GPU_MAX_FREQ_SCRIPT_NAME} | grep -v grep").trim().isNotEmpty()
         val runningFrida = RootUtils.runAsRoot("ps -ef | grep frida-server | grep -v grep").trim().isNotEmpty()
@@ -201,6 +264,7 @@ class TweakService : Service() {
         isInterceptorRunning = runningInterceptor
         isUsbInterceptorRunning = runningUsbInterceptor
         isOtaBlockerRunning = runningOtaBlocker
+        isOvrLoaderOverrideRunning = runningOvrLoaderOverride
         isGpuMinFreqRunning = runningGpuMin
         isGpuMaxFreqRunning = runningGpuMax
         isFridaRunning = runningFrida
@@ -290,6 +354,20 @@ class TweakService : Service() {
                 }
                 ACTION_START_OTA_BLOCKER -> startOtaBlocker()
                 ACTION_STOP_OTA_BLOCKER -> stopOtaBlocker()
+                ACTION_START_OVR_LOADER_OVERRIDE -> {
+                    startOvrLoaderOverride()
+                    sharedPrefs.edit()
+                        .putBoolean("ovr_loader_override_running", true)
+                        .putBoolean("ovr_loader_override_on_boot", true)
+                        .apply()
+                }
+                ACTION_STOP_OVR_LOADER_OVERRIDE -> {
+                    stopOvrLoaderOverride()
+                    sharedPrefs.edit()
+                        .putBoolean("ovr_loader_override_running", false)
+                        .putBoolean("ovr_loader_override_on_boot", false)
+                        .apply()
+                }
                 ACTION_STOP_WIRELESS_ADB -> {
                     Log.i(TAG, "Stopping Wireless ADB")
                     serviceScope.launch {
@@ -515,8 +593,51 @@ class TweakService : Service() {
         updateServiceState()
     }
 
+    private suspend fun startOvrLoaderOverride() {
+        RootUtils.runAsRoot("pkill -f ovr_loader_override.sh || true", useMountMaster = true)
+
+        val assetCopy = File(filesDir, "libovrplatformloader.so")
+        assets.open("ovrplatform/libovrplatformloader.so").use { input ->
+            assetCopy.outputStream().use { output -> input.copyTo(output) }
+        }
+
+        ovrLoaderOverrideScriptFile.writeText(OVR_LOADER_OVERRIDE_SCRIPT)
+
+        val setupCommand = """
+            mkdir -p /data/local/tmp/eventhorizon
+            cp ${assetCopy.absolutePath} /data/local/tmp/eventhorizon/libovrplatformloader.so
+            chmod 644 /data/local/tmp/eventhorizon/libovrplatformloader.so 2>/dev/null || true
+            chmod +x ${ovrLoaderOverrideScriptFile.absolutePath}
+            nohup ${ovrLoaderOverrideScriptFile.absolutePath} >/dev/null 2>&1 &
+        """.trimIndent()
+
+        RootUtils.runAsRoot(setupCommand, useMountMaster = true)
+        isOvrLoaderOverrideRunning = true
+        updateServiceState()
+    }
+
+    private suspend fun stopOvrLoaderOverride() {
+        val stopCommand = """
+            pkill -f ovr_loader_override.sh || true
+            mount | while read -r line; do
+                case "${'$'}line" in
+                    *" on /data/app/"*"lib/arm64/libovrplatformloader.so "*) 
+                        target="${'$'}{line#* on }"
+                        target="${'$'}{target% type *}"
+                        umount -l "${'$'}target" 2>/dev/null || true
+                        ;;
+                esac
+            done
+            rm -f /data/local/tmp/eventhorizon/ovr_loader_override_targets.txt
+        """.trimIndent()
+
+        RootUtils.runAsRoot(stopCommand, useMountMaster = true)
+        isOvrLoaderOverrideRunning = false
+        updateServiceState()
+    }
+
     private fun isAnyTweakRunning(): Boolean {
-        return isRgbRunning || isCustomLedRunning || isPowerLedRunning || isMinFreqRunning || isInterceptorRunning || isUsbInterceptorRunning || isOtaBlockerRunning || isGpuMinFreqRunning || isGpuMaxFreqRunning || isFridaRunning
+        return isRgbRunning || isCustomLedRunning || isPowerLedRunning || isMinFreqRunning || isInterceptorRunning || isUsbInterceptorRunning || isOtaBlockerRunning || isOvrLoaderOverrideRunning || isGpuMinFreqRunning || isGpuMaxFreqRunning || isFridaRunning
     }
     
     private suspend fun stopAllTweaksAndService() {
@@ -528,6 +649,7 @@ class TweakService : Service() {
         stopInterceptor()
         stopUsbInterceptor()
         stopOtaBlocker()
+        stopOvrLoaderOverride()
         stopFrida()
 
         // Broadcast that all tweaks have been stopped before the service dies.
@@ -617,6 +739,7 @@ class TweakService : Service() {
             putBoolean("intercept_startup_apps", false)
             putBoolean("usb_interceptor_running", false)
             putBoolean("ota_blocker_running", false)
+            putBoolean("ovr_loader_override_running", false)
             putBoolean("min_freq_is_running", false)
             putBoolean("gpu_min_freq_is_running", false)
             putBoolean("gpu_max_freq_is_running", false)
@@ -634,6 +757,18 @@ class TweakService : Service() {
             RootUtils.runAsRoot("pkill -f interceptor.sh || true")
             RootUtils.runAsRoot("pkill -f usb_interceptor.sh || true")
             RootUtils.runAsRoot("pkill -f ota_blocker.sh || true")
+            RootUtils.runAsRoot("pkill -f ovr_loader_override.sh || true", useMountMaster = true)
+            RootUtils.runAsRoot("""
+                mount | while read -r line; do
+                    case "${'$'}line" in
+                        *" on /data/app/"*"lib/arm64/libovrplatformloader.so "*) 
+                            target="${'$'}{line#* on }"
+                            target="${'$'}{target% type *}"
+                            umount -l "${'$'}target" 2>/dev/null || true
+                            ;;
+                    esac
+                done
+            """.trimIndent(), useMountMaster = true)
             RootUtils.runAsRoot("pkill -f frida-server || true")
         }
     }
