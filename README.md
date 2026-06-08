@@ -1,45 +1,94 @@
 ![eventhorizon icon](https://github.com/veygax/eventhorizon/blob/main/app/src/main/ic_launcher-playstore.png)
+
 # eventhorizon
-The root tool for the meta surveillance devices (Quest 3/3s). ROOT ON BOOT
 
-Now with unlocked bootloader device support!
+eventhorizon is an Android root utility for lawfully owned Meta Quest devices.
+It provides device-owner controls for maintenance, diagnostics, research, and
+system administration on rooted or unlocked-bootloader headsets.
 
-# AIO Editions: 
-(Please grant eventhorizon root access after rooting for most of these to work)
+## Features
 
-- "Safe Root Things" tweaks + Custom color selection
-- Terminal built into the app with root access
-- Double-Tap Passthrough Fix: Current root exploit breaks Double-Tap to enable passthrough, this fixes that issue
-- Internet Kill Switch & Root Domain Blocker
+- Root-on-boot support for compatible devices
+- Safe root tweaks and custom LED color selection
+- Built-in terminal with root command execution
+- Double-tap passthrough repair for affected root setups
+- Internet kill switch and root domain blocker
 - Wireless ADB with root access
 - Frida Server support
-- Fix Magisk Zygisk toggle: This will crash your system but it will turn it on
-- Intercept system: Stops Horizon Feed & Social Connections from launching (No more seeing those apps on boot or when you wake your headset ever again!)
-- USB Interceptor: Detects & "accepts" USB Detected notification
-- Disable Meta Telemetry
-- No Controller Requirement: For VR Games
-- System Hang Fix (Booting with Domain Blocker or a restricted internet connection)
-- Disable Proximity Auto Wake
-- OS Update Monitor: Monitors update_engine and cancels updates before they can even start
-- Spoof Build Type (For Dogfood & ShellDebug)
-- CPU Tweaks: Temp/Freq monitoring, set minimum freq toggle, & governor switch (schedutil and performance)
-- GPU Tweaks: Temp/Freq monitoring, set minimum/maximum freq options
-- App section with useful apps to install, launch, and a dogfood hub toggle
-- Prevert Auto Installs: Stops the system from being able to install default meta apps
+- Frida OCMS minimum OS bypass script
+- OCMS minimum OS bypass toggle using runtime Horizon OS SDK spoofing
+- Magisk Zygisk toggle repair
+- Horizon Feed and social panel interceptor
+- USB notification interceptor for MTP enablement
+- Meta telemetry disablement
+- No-controller requirement toggle for VR applications
+- Newer game compatibility toggle for older headset firmware
+- System hang mitigation for restricted-network boot scenarios
+- OS update monitor that cancels pending update-engine activity
+- Build-type spoofing for Dogfood and ShellDebug workflows
+- CPU monitoring, minimum-frequency control, and governor selection
+- GPU monitoring and minimum/maximum frequency controls
+- App manager for installation, launch, and Dogfood Hub control
+- Default Meta app auto-install prevention
 
-> [!CAUTION]
-> No "developers" involved or mentioned with/in this project are responsible for any damage that may occur during, before or after the runtime and installation of the app. "Developers" involved includes but is not limited to, all individuals and organizations mentioned in the code/credits section, @veygax and FreeXR.
+## Installation
 
-## installation
-download the apk from releases and sideload
+Download the latest APK from the project releases page and sideload it onto a
+compatible headset. Grant root access when prompted; most features require root
+or an unlocked-bootloader environment.
 
-## credits
-- https://github.com/zhuowei/cheese-app for a lot of the app code
-- https://github.com/scottyab/rootbeer for root detection
-- https://github.com/zhuowei/cheese for the exploit backend
-- adrenaline by Project Zero
-- adreno_user from m-y-mo
-- Freedreno from Mesa
-- shellcode from Longterm Security
-- Magisk from topjohnwu and the Magisk developers.
-- Thanks to Rosie & Mandi in the FreeXR discord for the block list additions
+## Frida
+
+The repository includes Frida Server and host-loaded Frida scripts under
+`frida/`. Start Frida Server from the app, then load scripts from a host machine
+with the Frida CLI.
+
+See [frida/README.md](frida/README.md) for the OCMS minimum OS bypass script.
+
+## Legal Notice
+
+This project is an independent reverse-engineering effort intended solely to
+achieve interoperability with lawfully obtained Meta Quest hardware and
+software. Under California's Uniform Trade Secrets Act, reverse engineering or
+independent derivation alone is not an "improper means" (California Civil Code
+§ 3426.1(a)). U.S. copyright law also permits qualifying reverse engineering of
+lawfully obtained computer programs when necessary to achieve interoperability
+(17 U.S.C. § 1201(f)).
+
+The maintainers' position is that this project does not violate § 1201 because
+it is an independently created program whose purpose is to exchange information
+with, and use information exchanged by, Quest software; it identifies and
+implements only the protocol elements necessary for that interoperability; and it
+does not copy or distribute Meta's copyrighted program code. Section 1201(f)(1)
+permits the necessary identification and analysis by a person who has lawfully
+obtained the right to use the analyzed program, § 1201(f)(2) permits necessary
+interoperability-enabling means, and § 1201(f)(3) permits sharing the resulting
+information and means solely to enable interoperability, so long as the acts are
+noninfringing and otherwise lawful.
+
+This notice is not legal advice and does not authorize breach of contract,
+copyright infringement, unauthorized access, circumvention beyond an applicable
+statutory exception, or any other unlawful conduct. Users are responsible for
+ensuring that their use complies with all applicable laws and agreements.
+
+This project is not affiliated with or endorsed by Meta Platforms, Inc. or its
+affiliates. Meta, Meta Quest, Quest Link, and other product names or trademarks
+are the property of their respective owners. To the maximum extent permitted by
+law, the software is provided "as is", without warranties of any kind, express
+or implied. The project's copyright holders, maintainers, contributors, and any
+person or entity involved in creating, publishing, distributing, or documenting
+the software accept no liability and assume no responsibility for any damage,
+loss, claim, or other consequence arising from its use or misuse.
+
+## Credits
+
+- [zhuowei/cheese-app](https://github.com/zhuowei/cheese-app) for much of the
+  app code
+- [scottyab/rootbeer](https://github.com/scottyab/rootbeer) for root detection
+- [zhuowei/cheese](https://github.com/zhuowei/cheese) for the exploit backend
+- Project Zero for adrenaline
+- m-y-mo for `adreno_user`
+- Mesa for Freedreno
+- Longterm Security for shellcode
+- topjohnwu and the Magisk developers for Magisk
+- Rosie and Mandi in the FreeXR Discord for block list additions
