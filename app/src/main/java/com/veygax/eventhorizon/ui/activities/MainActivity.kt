@@ -118,6 +118,29 @@ class MainActivity : ComponentActivity() {
         return@withContext false
     }
 
+    fun checkAdbRootable(): Boolean {
+        return try {
+            val process = Runtime.getRuntime().exec("getprop ro.boot.adb.rootable")
+            val state = process.inputStream.bufferedReader().readText().trim()
+            state == "1"
+        } catch (e: Exception) {
+            android.util.Log.e("MainActivity", "Failed to check adb rootable state", e)
+            false
+        }
+    }
+
+    fun checkMagiskInstalled(): Boolean {
+        return try {
+            val process = Runtime.getRuntime().exec(arrayOf("magisk", "-v"))
+            val output = process.inputStream.bufferedReader().readText().trim()
+            process.waitFor()
+            output.contains("MAGISK", ignoreCase = true)
+        } catch (e: Exception) {
+            android.util.Log.e("MainActivity", "Failed to check Magisk installation", e)
+            false
+        }
+    }
+
     fun isPatched(): Boolean {
         val lastVersion = lastVersionForDevice()
         if (lastVersion == 0L) {
@@ -219,6 +242,7 @@ fun EventHorizonApp(
     val scrollState = rememberScrollState()
     var isProcessRunning by remember { mutableStateOf(false) }
     var isRooted by remember { mutableStateOf(false) }
+    var showAdbRootDialog by remember { mutableStateOf(false) }
 
     // --- State for the App Updater ---
     var isCheckingForUpdate by remember { mutableStateOf(false) }
@@ -298,6 +322,10 @@ fun EventHorizonApp(
         }
         launch {
             isUnlockedBootloader = mainActivity.checkBootloaderState(sharedPrefs)
+            
+            if (!isRooted && mainActivity.checkAdbRootable() && !mainActivity.checkMagiskInstalled()) {
+                showAdbRootDialog = true
+            }
         }
     }
 
@@ -625,6 +653,39 @@ fun EventHorizonApp(
                 checkForUpdate(isManual = true)
             },
             onDismiss = { showUpdateOptionsDialog = false }
+        )
+    }
+
+    // --- ADB Root Patch Dialog ---
+    if (showAdbRootDialog) {
+        AlertDialog(
+            onDismissRequest = { showAdbRootDialog = false },
+            title = { Text("ADB Root Detected!") },
+            text = { Text("Patch boot.img with Magisk?") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showAdbRootDialog = false
+                        val intent = Intent(context, AdbRootActivity::class.java).apply {
+                            putExtra("is_unlocked", isUnlockedBootloader)
+                        }
+                        context.startActivity(intent)
+                    }
+                ) {
+                    Text("Set Up")
+                }
+            },
+            dismissButton = {
+                Button(
+                    onClick = { showAdbRootDialog = false },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                ) {
+                    Text("Later")
+                }
+            }
         )
     }
 }
