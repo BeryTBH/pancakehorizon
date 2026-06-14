@@ -36,6 +36,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.lifecycle.lifecycleScope
 import com.veygax.eventhorizon.core.UpdateManager
 import com.veygax.eventhorizon.system.DnsBlockerService
@@ -52,7 +53,18 @@ import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import android.util.Log
 
-class MainActivity : ComponentActivity() {
+interface EventHorizonActions {
+    suspend fun checkBootloaderState(sharedPrefs: android.content.SharedPreferences): Boolean
+    fun checkAdbRootable(): Boolean
+    fun checkMagiskInstalled(): Boolean
+    fun isPatched(): Boolean
+    fun getVersionIncremental(): Long
+    fun getDeviceName(): String
+    fun isSupportedDevice(): Boolean
+    fun executeExploit(context: Context, onOutput: (String) -> Unit, onProcessComplete: () -> Unit)
+}
+
+class MainActivity : ComponentActivity(), EventHorizonActions {
 
     private val vpnPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -95,14 +107,15 @@ class MainActivity : ComponentActivity() {
                         autoRootOnStart = intent?.getBooleanExtra("auto_root", false) ?: false,
                         autoStartDnsBlocker = intent?.getBooleanExtra("start_dns_blocker", false) ?: false,
                         onRequestVpnPermission = { requestVpnPermission() },
-                        intent = intent
+                        intent = intent,
+                        actions = this@MainActivity
                     )
                 }
             }
         }
     }
 
-    suspend fun checkBootloaderState(sharedPrefs: android.content.SharedPreferences): Boolean = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+    override suspend fun checkBootloaderState(sharedPrefs: android.content.SharedPreferences): Boolean = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
         if (sharedPrefs.getBoolean("is_unlocked_bootloader", false)) return@withContext true
         
         try {
@@ -118,7 +131,7 @@ class MainActivity : ComponentActivity() {
         return@withContext false
     }
 
-    fun checkAdbRootable(): Boolean {
+    override fun checkAdbRootable(): Boolean {
         return try {
             val process = Runtime.getRuntime().exec("getprop ro.boot.adb.rootable")
             val state = process.inputStream.bufferedReader().readText().trim()
@@ -129,7 +142,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    fun checkMagiskInstalled(): Boolean {
+    override fun checkMagiskInstalled(): Boolean {
         return try {
             val process = Runtime.getRuntime().exec(arrayOf("magisk", "-v"))
             val output = process.inputStream.bufferedReader().readText().trim()
@@ -141,7 +154,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    fun isPatched(): Boolean {
+    override fun isPatched(): Boolean {
         val lastVersion = lastVersionForDevice()
         if (lastVersion == 0L) {
             return false // you're on your own
@@ -155,16 +168,16 @@ class MainActivity : ComponentActivity() {
         else -> 0
     }
 
-    fun getVersionIncremental() = Build.VERSION.INCREMENTAL.toLong()
+    override fun getVersionIncremental() = Build.VERSION.INCREMENTAL.toLong()
 
-    fun getDeviceName(): String = Build.PRODUCT
+    override fun getDeviceName(): String = Build.PRODUCT
 
-    fun isSupportedDevice(): Boolean {
+    override fun isSupportedDevice(): Boolean {
         return getDeviceName() == "eureka" || getDeviceName() == "panther"
     }
 
     @RequiresApi(Build.VERSION_CODES.O)
-    fun executeExploit(
+    override fun executeExploit(
         context: Context,
         onOutput: (String) -> Unit,
         onProcessComplete: () -> Unit
@@ -229,7 +242,8 @@ fun EventHorizonApp(
     autoRootOnStart: Boolean,
     autoStartDnsBlocker: Boolean,
     onRequestVpnPermission: () -> Unit,
-    intent: Intent?
+    intent: Intent?,
+    actions: EventHorizonActions
 ) {
     val context = LocalContext.current
     val sharedPrefs = remember { context.getSharedPreferences("eventhorizon_prefs", Context.MODE_PRIVATE) }
@@ -258,13 +272,9 @@ fun EventHorizonApp(
     // --- Animation State for Update Icon ---
     val rotationAngle = remember { Animatable(0f) }
 
-    val mainActivity = (LocalContext.current as MainActivity)
-
     // Function to check for updates
     fun checkForUpdate(isManual: Boolean) {
         coroutineScope.launch {
-            // On a manual check, launch a separate coroutine for the animation.
-            // This ensures the animation completes regardless of how fast the check is.
             if (isManual) {
                 launch {
                     rotationAngle.animateTo(
@@ -276,7 +286,6 @@ fun EventHorizonApp(
 
             isCheckingForUpdate = true
 
-            // Define repositories for stable and dev
             val stableOwner = "veygax"
             val stableRepo = "eventhorizon"
             val devOwner = "Lumince"
@@ -284,7 +293,6 @@ fun EventHorizonApp(
 
             val release = when (updateChannel) {
                 "dev" -> {
-                    // Check both dev and stable; return the newer one
                     val devRelease = UpdateManager.checkForUpdate(context, devOwner, devRepo)
                     val stableRelease = UpdateManager.checkForUpdate(context, stableOwner, stableRepo)
 
@@ -321,9 +329,9 @@ fun EventHorizonApp(
             checkForUpdate(isManual = false)
         }
         launch {
-            isUnlockedBootloader = mainActivity.checkBootloaderState(sharedPrefs)
+            isUnlockedBootloader = actions.checkBootloaderState(sharedPrefs)
             
-            if (!isRooted && mainActivity.checkAdbRootable() && !mainActivity.checkMagiskInstalled()) {
+            if (!isRooted && actions.checkAdbRootable() && !actions.checkMagiskInstalled()) {
                 showAdbRootDialog = true
             }
         }
@@ -331,7 +339,7 @@ fun EventHorizonApp(
 
     LaunchedEffect(autoRootOnStart) {
         if (autoRootOnStart && !isProcessRunning) {
-            mainActivity.executeExploit(
+            actions.executeExploit(
                 context,
                 onOutput = { line -> consoleText += line + "\n" },
                 onProcessComplete = { isProcessRunning = false }
@@ -362,7 +370,6 @@ fun EventHorizonApp(
             )
             Spacer(Modifier.weight(1f))
 
-            // --- Update Icon ---
             Box(
                 modifier = Modifier
                     .size(48.dp)
@@ -447,14 +454,14 @@ fun EventHorizonApp(
                             rootOnBoot = checked
                             sharedPrefs.edit().putBoolean("root_on_boot", checked).apply()
                         },
-                        enabled = !mainActivity.isPatched()
+                        enabled = !actions.isPatched()
                     )
                 }
             )
         
             Spacer(modifier = Modifier.height(12.dp))
 
-            if (!isUnlockedBootloader && mainActivity.isPatched()) {
+            if (!isUnlockedBootloader && actions.isPatched()) {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
@@ -471,7 +478,7 @@ fun EventHorizonApp(
                             color = MaterialTheme.colorScheme.onErrorContainer
                         )
                         Text(
-                            text = "Current Firmware: ${mainActivity.getVersionIncremental()}",
+                            text = "Current Firmware: ${actions.getVersionIncremental()}",
                             style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
                             color = MaterialTheme.colorScheme.onErrorContainer
                         )
@@ -480,7 +487,7 @@ fun EventHorizonApp(
                 Spacer(modifier = Modifier.height(12.dp))
             }
         
-            if (!isUnlockedBootloader && !mainActivity.isSupportedDevice()) {
+            if (!isUnlockedBootloader && !actions.isSupportedDevice()) {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
@@ -497,7 +504,7 @@ fun EventHorizonApp(
                             color = MaterialTheme.colorScheme.onErrorContainer
                         )
                         Text(
-                            text = "Headset: ${mainActivity.getDeviceName()}",
+                            text = "Headset: ${actions.getDeviceName()}",
                             style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
                             color = MaterialTheme.colorScheme.onErrorContainer
                         )
@@ -509,7 +516,7 @@ fun EventHorizonApp(
             Button(
                 onClick = {
                     if (!isProcessRunning) {
-                        mainActivity.executeExploit(context, onOutput = { line ->
+                        actions.executeExploit(context, onOutput = { line ->
                             consoleText += line + "\n"
                         }, onProcessComplete = {
                             isProcessRunning = false
@@ -518,7 +525,7 @@ fun EventHorizonApp(
                     }
                 },
                 modifier = Modifier.fillMaxWidth(),
-                enabled = !isProcessRunning && !isRooted && !mainActivity.isPatched() && mainActivity.isSupportedDevice()
+                enabled = !isProcessRunning && !isRooted && !actions.isPatched() && actions.isSupportedDevice()
             ) {
                 Text(if (isProcessRunning) "Rooting..." else "Root Now")
             }
@@ -788,7 +795,6 @@ fun UpdateOptionsDialog(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier.wrapContentHeight()
             ) {
-                // Current version
                 Text(
                     text = "Current version: v$currentVersion",
                     style = MaterialTheme.typography.bodyMedium,
@@ -799,7 +805,6 @@ fun UpdateOptionsDialog(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // --- Channel Selector ---
                 Text(
                     "Update Channel:",
                     style = MaterialTheme.typography.bodyMedium,
@@ -830,7 +835,6 @@ fun UpdateOptionsDialog(
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                // --- Check now ---
                 Button(
                     onClick = onCheckNow,
                     modifier = Modifier.wrapContentWidth()
@@ -840,7 +844,6 @@ fun UpdateOptionsDialog(
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // --- Auto check toggle ---
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.Center
@@ -862,4 +865,32 @@ fun UpdateOptionsDialog(
             Button(onClick = onDismiss) { Text("Close") }
         }
     )
+}
+
+@RequiresApi(Build.VERSION_CODES.O)
+@Preview(showBackground = true, name = "Event Horizon Main Screen")
+@Composable
+fun EventHorizonAppPreview() {
+    val mockActions = object : EventHorizonActions {
+        override suspend fun checkBootloaderState(sharedPrefs: android.content.SharedPreferences) = false
+        override fun checkAdbRootable() = true
+        override fun checkMagiskInstalled() = false
+        override fun isPatched() = false
+        override fun getVersionIncremental() = 51154110129000520L
+        override fun getDeviceName() = "eureka"
+        override fun isSupportedDevice() = true
+        override fun executeExploit(context: Context, onOutput: (String) -> Unit, onProcessComplete: () -> Unit) {}
+    }
+
+    MaterialTheme {
+        Surface(color = MaterialTheme.colorScheme.background) {
+            EventHorizonApp(
+                autoRootOnStart = false,
+                autoStartDnsBlocker = false,
+                onRequestVpnPermission = {},
+                intent = null,
+                actions = mockActions
+            )
+        }
+    }
 }

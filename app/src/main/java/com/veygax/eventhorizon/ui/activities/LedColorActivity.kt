@@ -23,8 +23,8 @@ import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.compose.ui.tooling.preview.Preview
 import com.veygax.eventhorizon.system.TweakService
-import com.veygax.eventhorizon.utils.RootUtils
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -140,5 +140,15 @@ fun ColorSlider(label: String, value: Float, onValueChange: (Float) -> Unit, col
                 activeTrackColor = color
             )
         )
+    }
+}
+
+@Preview(showBackground = true, name = "LED Color Screen Preview")
+@Composable
+fun LedColorScreenPreview() {
+    MaterialTheme {
+        Surface(color = MaterialTheme.colorScheme.background) {
+            LedColorScreen()
+        }
     }
 }

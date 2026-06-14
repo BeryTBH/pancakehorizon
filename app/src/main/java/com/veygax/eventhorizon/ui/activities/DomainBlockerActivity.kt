@@ -18,6 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.tooling.preview.Preview
 import com.veygax.eventhorizon.system.DomainBlockerManager
 import com.veygax.eventhorizon.utils.RootUtils
 import kotlinx.coroutines.delay
@@ -235,6 +236,16 @@ fun DomainBlockerScreen(onNavigateBack: () -> Unit) {
                     }
                 }
             }
+        }
+    }
+}
+
+@Preview(showBackground = true, name = "Domain Blocker Screen Preview")
+@Composable
+fun DomainBlockerScreenPreview() {
+    MaterialTheme {
+        Surface(color = MaterialTheme.colorScheme.background) {
+            DomainBlockerScreen(onNavigateBack = {})
         }
     }
 }

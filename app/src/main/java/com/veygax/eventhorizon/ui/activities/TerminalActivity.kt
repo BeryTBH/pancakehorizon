@@ -22,6 +22,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.veygax.eventhorizon.utils.RootUtils
@@ -50,7 +51,7 @@ class TerminalActivity : ComponentActivity() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun TerminalScreen() {
+fun TerminalScreen(onRunCommand: suspend (String) -> String = { cmd -> RootUtils.runAsRoot(cmd) }) {
     val coroutineScope = rememberCoroutineScope()
     val activity = LocalContext.current as? Activity
     val lazyListState = rememberLazyListState()
@@ -64,7 +65,7 @@ fun TerminalScreen() {
             history.add("> $commandToRun")
             inputText = "" // Clear input field immediately
             coroutineScope.launch {
-                val result = RootUtils.runAsRoot(commandToRun)
+                val result = onRunCommand(commandToRun)
                 history.add(result.trim())
                 // Scroll to the bottom after the result is added
                 lazyListState.animateScrollToItem(history.size)
@@ -121,6 +122,16 @@ fun TerminalScreen() {
                 keyboardActions = KeyboardActions(onDone = { executeCommand() }),
                 singleLine = true
             )
+        }
+    }
+}
+
+@Preview(showBackground = true, name = "Terminal Screen Preview")
+@Composable
+fun TerminalScreenPreview() {
+    MaterialTheme {
+        Surface(color = MaterialTheme.colorScheme.background) {
+            TerminalScreen(onRunCommand = { "[preview] command output" })
         }
     }
 }

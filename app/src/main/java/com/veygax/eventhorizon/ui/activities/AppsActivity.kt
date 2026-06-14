@@ -97,8 +97,8 @@ class AppsActivity : ComponentActivity() {
 fun getInstalledVersion(packageName: String, packageManager: android.content.pm.PackageManager): String? {
     return try {
         val pInfo = packageManager.getPackageInfo(packageName, 0)
-        pInfo.versionName
-    } catch (e: android.content.pm.PackageManager.NameNotFoundException) {
+        pInfo?.versionName
+    } catch (e: Exception) {
         null
     }
 }
@@ -114,7 +114,7 @@ fun sanitizeVersionString(version: String?): String? {
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
-fun AppsScreen() {
+fun AppsScreen(onRunCommand: suspend (String) -> String = { cmd -> RootUtils.runAsRoot(cmd) }) {
     val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
     val activity = context as? Activity
@@ -356,13 +356,13 @@ fun AppsScreen() {
 
     LaunchedEffect(Unit) {
         // Check Dogfood Hub status
-        val buildType = RootUtils.runAsRoot("getprop ro.build.type")
+        val buildType = onRunCommand("getprop ro.build.type")
         isDogfoodEnabled = buildType.trim() == "userdebug"
 
         // Check for Dogfood Hub setup step 2
         if (sharedPrefs.getBoolean("dogfood_pending_step2", false)) {
             sharedPrefs.edit().remove("dogfood_pending_step2").apply()
-            RootUtils.runAsRoot(LaunchCommands.ENABLE_DOGFOOD_STEP_2)
+            onRunCommand(LaunchCommands.ENABLE_DOGFOOD_STEP_2)
         }
     }
 
@@ -894,10 +894,12 @@ object LaunchCommands {
     """
 }
 
-@Preview(showBackground = true, heightDp = 600)
+@Preview(showBackground = true, name = "Apps Screen Preview", heightDp = 600)
 @Composable
 fun AppsScreenPreview() {
     MaterialTheme {
-        AppsScreen()
+        Surface(color = MaterialTheme.colorScheme.background) {
+            AppsScreen(onRunCommand = { "" })
+        }
     }
 }

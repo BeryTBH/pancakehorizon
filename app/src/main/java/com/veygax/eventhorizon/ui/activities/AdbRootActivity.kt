@@ -34,7 +34,14 @@ import java.io.FileOutputStream
 import java.net.URL
 import java.util.zip.ZipFile
 
-class AdbRootActivity : ComponentActivity() {
+interface AdbRootActions {
+    fun openSettings()
+    fun getAdbHomeDir(): String
+    fun getAdbBinary(): File?
+    suspend fun getMagiskPatcherDir(): File?
+}
+
+class AdbRootActivity : ComponentActivity(), AdbRootActions {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
@@ -51,16 +58,36 @@ class AdbRootActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(), 
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    AdbRootScreen(onBack = { finish() }, context = this@AdbRootActivity)
+                    AdbRootScreen(onBack = { finish() }, actions = this@AdbRootActivity)
                 }
             }
         }
+    }
+
+    override fun openSettings() {
+        val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+        intent.data = Uri.parse("package:com.android.settings")
+        intent.setPackage("com.android.settings")
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_MULTIPLE_TASK)
+        startActivity(intent)
+    }
+
+    override fun getAdbHomeDir(): String {
+        return getDir("adb_keys", Context.MODE_PRIVATE).absolutePath
+    }
+
+    override fun getAdbBinary(): File? {
+        return prepareAdbBinary(this)
+    }
+
+    override suspend fun getMagiskPatcherDir(): File? {
+        return prepareMagiskPatcher(this)
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AdbRootScreen(onBack: () -> Unit, context: Context) {
+fun AdbRootScreen(onBack: () -> Unit, actions: AdbRootActions) {
     val scope = rememberCoroutineScope()
     var logText by remember { mutableStateOf("") }
 
@@ -72,7 +99,7 @@ fun AdbRootScreen(onBack: () -> Unit, context: Context) {
     var pairingPort by remember { mutableStateOf("") }
     var pairingCode by remember { mutableStateOf("") }
 
-    val adbHomeDir = remember { context.getDir("adb_keys", Context.MODE_PRIVATE).absolutePath }
+    val adbHomeDir = remember { actions.getAdbHomeDir() }
 
     fun log(msg: String) {
         logText += "> $msg\n"
@@ -103,15 +130,11 @@ fun AdbRootScreen(onBack: () -> Unit, context: Context) {
                 .padding(innerPadding)
                 .padding(horizontal = 16.dp, vertical = 8.dp)
                 .fillMaxSize()
-                .verticalScroll(mainScrollState), // Main screen is now scrollable
+                .verticalScroll(mainScrollState),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Button(onClick = {
-                val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
-                intent.data = Uri.parse("package:com.android.settings")
-                intent.setPackage("com.android.settings")
-                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_MULTIPLE_TASK)
-                context.startActivity(intent)
+                actions.openSettings()
             }, modifier = Modifier.fillMaxWidth()) {
                 Text("1. Open Android Settings")
             }
@@ -163,7 +186,7 @@ fun AdbRootScreen(onBack: () -> Unit, context: Context) {
                             }
                             isProcessing = true
                             scope.launch {
-                                val adbFile = prepareAdbBinary(context)
+                                val adbFile = actions.getAdbBinary()
                                 if (adbFile == null) {
                                     log("Error: Could not locate ADB binary in native libraries.")
                                     isProcessing = false
@@ -200,7 +223,7 @@ fun AdbRootScreen(onBack: () -> Unit, context: Context) {
                     if (isProcessing) return@Button
                     isProcessing = true
                     scope.launch {
-                        val adbFile = prepareAdbBinary(context)
+                        val adbFile = actions.getAdbBinary()
                         if (adbFile == null) {
                             log("Error: Could not locate binary.")
                             isProcessing = false
@@ -257,7 +280,7 @@ fun AdbRootScreen(onBack: () -> Unit, context: Context) {
                     if (isProcessing) return@Button
                     isProcessing = true
                     scope.launch {
-                        val adbFile = prepareAdbBinary(context)
+                        val adbFile = actions.getAdbBinary()
                         if (adbFile == null) {
                             log("Error: ADB binary not found.")
                             isProcessing = false
@@ -287,7 +310,7 @@ fun AdbRootScreen(onBack: () -> Unit, context: Context) {
                         if (copyResult.isNotBlank() && !copyResult.contains("records in")) log(copyResult.trim())
                         
                         log("Extracting Magisk patcher utilities locally...")
-                        val localPatchDir = prepareMagiskPatcher(context)
+                        val localPatchDir = actions.getMagiskPatcherDir()
                         if (localPatchDir == null) {
                             log("Error: Failed to prepare Magisk patch files.")
                             isProcessing = false
@@ -361,7 +384,7 @@ fun AdbRootScreen(onBack: () -> Unit, context: Context) {
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(250.dp), // Replaced .weight(1f) with a fixed height so the main column can scroll properly
+                    .height(250.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
             ) {
                 SelectionContainer {
@@ -461,5 +484,22 @@ suspend fun executeAdb(adbFile: File, homeDir: String, vararg args: String): Str
             android.util.Log.e("AdbRootActivity", "Error closing streams: ${e.message}")
         }
         process?.destroy()
+    }
+}
+
+@Preview(showBackground = true, name = "ADB Root Screen Preview")
+@Composable
+fun AdbRootScreenPreview() {
+    val mockActions = object : AdbRootActions {
+        override fun openSettings() {}
+        override fun getAdbHomeDir() = "/mock/path/adb_keys"
+        override fun getAdbBinary(): File? = null
+        override suspend fun getMagiskPatcherDir(): File? = null
+    }
+
+    MaterialTheme {
+        Surface {
+            AdbRootScreen(onBack = {}, actions = mockActions)
+        }
     }
 }

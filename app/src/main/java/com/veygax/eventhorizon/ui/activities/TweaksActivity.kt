@@ -280,13 +280,30 @@ object StatusChecks {
     }
 }
 
-class TweaksActivity : ComponentActivity() {
+interface TweaksActions {
+    val isRainbowLedActiveState: androidx.compose.runtime.MutableState<Boolean>
+    val isCustomLedActiveState: androidx.compose.runtime.MutableState<Boolean>
+    val isPowerLedActiveState: androidx.compose.runtime.MutableState<Boolean>
+    var justLaunchedCustomLed: Boolean
 
-    var isRainbowLedActiveState = mutableStateOf(false)
-    var isCustomLedActiveState = mutableStateOf(false)
-    var isPowerLedActiveState = mutableStateOf(false)
+    fun finish()
+    fun startTweakServiceAction(action: String, intentModifier: (Intent) -> Unit = {})
+    fun launchCustomColorPicker()
+    fun requestVpnPermission()
+    fun stopDnsService()
+    suspend fun getRemoteFridaVersion(): String?
+    suspend fun downloadFile(urlStr: String, destinationFile: java.io.File): Boolean
+    fun extractZygiskAsset(context: Context): String?
+    suspend fun copyTelemetryAssets(context: Context)
+}
+
+class TweaksActivity : ComponentActivity(), TweaksActions {
+
+    override var isRainbowLedActiveState = mutableStateOf(false)
+    override var isCustomLedActiveState = mutableStateOf(false)
+    override var isPowerLedActiveState = mutableStateOf(false)
     var isRootBlockerManuallyEnabledState = mutableStateOf(false)
-    var justLaunchedCustomLed = false
+    override var justLaunchedCustomLed = false
 
     private val vpnPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -324,12 +341,12 @@ class TweaksActivity : ComponentActivity() {
         startService(intent)
     }
 
-    fun stopDnsService() {
+    override fun stopDnsService() {
         val intent = Intent(this, DnsBlockerService::class.java).setAction(DnsBlockerService.ACTION_STOP)
         startService(intent)
     }
 
-    fun requestVpnPermission() {
+    override fun requestVpnPermission() {
         val intent = VpnService.prepare(this)
         if (intent != null) {
             vpnPermissionLauncher.launch(intent)
@@ -338,7 +355,7 @@ class TweaksActivity : ComponentActivity() {
         }
     }
 
-    suspend fun copyTelemetryAssets(context: Context) = withContext(Dispatchers.IO) {
+    override suspend fun copyTelemetryAssets(context: Context): Unit = withContext(Dispatchers.IO) {
         val moduleDir = "/data/adb/eventhorizon"
         val commands = StringBuilder("mkdir -p $moduleDir\n")
         val filesToCopy = listOf("telemetry", "telemetry.rc", "fflogger_event_store.sql")
@@ -362,7 +379,7 @@ class TweaksActivity : ComponentActivity() {
         RootUtils.runAsRoot(commands.toString(), useMountMaster = true)
     }
 
-    fun extractZygiskAsset(context: Context): String? {
+    override fun extractZygiskAsset(context: Context): String? {
         val assetName = "exploit/Zygisk.ko"
         val tempFile = File(context.cacheDir, "Zygisk.ko")
     
@@ -379,12 +396,12 @@ class TweaksActivity : ComponentActivity() {
         }
     }
 
-    fun launchCustomColorPicker() {
+    override fun launchCustomColorPicker() {
         justLaunchedCustomLed = true
         ledColorLauncher.launch(Intent(this, LedColorActivity::class.java))
     }
 
-    fun startTweakServiceAction(action: String, intentModifier: (Intent) -> Unit = {}) {
+    override fun startTweakServiceAction(action: String, intentModifier: (Intent) -> Unit) {
         val intent = Intent(this, TweakService::class.java).apply {
             this.action = action
             intentModifier(this)
@@ -402,7 +419,7 @@ class TweaksActivity : ComponentActivity() {
         return false
     }
 
-    suspend fun getRemoteFridaVersion(): String? = withContext(Dispatchers.IO) {
+    override suspend fun getRemoteFridaVersion(): String? = withContext(Dispatchers.IO) {
         try {
             val url = java.net.URL("https://github.com/veygax/eventhorizon/raw/refs/heads/main/frida/version.txt")
             val connection = url.openConnection()
@@ -417,7 +434,7 @@ class TweaksActivity : ComponentActivity() {
         }
     }
 
-    suspend fun downloadFile(urlStr: String, destinationFile: File): Boolean = withContext(Dispatchers.IO) {
+    override suspend fun downloadFile(urlStr: String, destinationFile: File): Boolean = withContext(Dispatchers.IO) {
         try {
             val url = java.net.URL(urlStr)
             val connection = url.openConnection()
@@ -470,7 +487,7 @@ class TweaksActivity : ComponentActivity() {
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun TweaksScreen(
-    activity: TweaksActivity,
+    activity: TweaksActions,
     isRooted: Boolean,
     isDnsServiceRunning: () -> Boolean
 ) {
@@ -2400,12 +2417,33 @@ object TweakCommands {
     """
 }
 
-@Preview(showBackground = true)
+@Preview(showBackground = true, name = "Tweaks Screen Preview")
 @Composable
 fun TweaksScreenPreview() {
+    val mockActions = object : TweaksActions {
+        override val isRainbowLedActiveState = mutableStateOf(false)
+        override val isCustomLedActiveState = mutableStateOf(false)
+        override val isPowerLedActiveState = mutableStateOf(false)
+        override var justLaunchedCustomLed = false
+
+        override fun finish() {}
+        override fun startTweakServiceAction(action: String, intentModifier: (Intent) -> Unit) {}
+        override fun launchCustomColorPicker() {}
+        override fun requestVpnPermission() {}
+        override fun stopDnsService() {}
+        override suspend fun getRemoteFridaVersion(): String? = null
+        override suspend fun downloadFile(urlStr: String, destinationFile: java.io.File) = false
+        override fun extractZygiskAsset(context: Context): String? = null
+        override suspend fun copyTelemetryAssets(context: Context) {}
+    }
+
     MaterialTheme {
-        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text("Preview requires Activity context.")
+        Surface(color = MaterialTheme.colorScheme.background) {
+            TweaksScreen(
+                activity = mockActions,
+                isRooted = true,
+                isDnsServiceRunning = { false }
+            )
         }
     }
 }
