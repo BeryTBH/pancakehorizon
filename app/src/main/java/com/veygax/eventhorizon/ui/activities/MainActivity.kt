@@ -534,37 +534,56 @@ fun EventHorizonApp(
         Spacer(modifier = Modifier.height(8.dp))
 
         if (isRooted) {
-            Row(
+            Column(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Button(
-                    onClick = {
-                        val intent = Intent(context, TweaksActivity::class.java)
-                        intent.putExtra("is_rooted", true)
-                        context.startActivity(intent)
-                    },
-                    modifier = Modifier.weight(1f)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Text("AIO Tweaks")
+                    Button(
+                        onClick = {
+                            val intent = Intent(context, TweaksActivity::class.java)
+                            intent.putExtra("is_rooted", true)
+                            context.startActivity(intent)
+                        },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("AIO Tweaks")
+                    }
+                    Button(
+                        onClick = {
+                            val intent = Intent(context, AppsActivity::class.java)
+                            context.startActivity(intent)
+                        },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("Apps")
+                    }
                 }
-                Button(
-                    onClick = {
-                        val intent = Intent(context, AppsActivity::class.java)
-                        context.startActivity(intent)
-                    },
-                    modifier = Modifier.weight(1f)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Text("Apps")
-                }
-                Button(
-                    onClick = {
-                        val intent = Intent(context, TerminalActivity::class.java)
-                        context.startActivity(intent)
-                    },
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Text("Terminal")
+                    Button(
+                        onClick = {
+                            val intent = Intent(context, ControllerInfoActivity::class.java)
+                            context.startActivity(intent)
+                        },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("Controllers")
+                    }
+                    Button(
+                        onClick = {
+                            val intent = Intent(context, TerminalActivity::class.java)
+                            context.startActivity(intent)
+                        },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("Terminal")
+                    }
                 }
             }
         } else {

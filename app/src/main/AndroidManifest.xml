@@ -76,6 +76,12 @@
             android:label="Domain Blocker"
             android:theme="@style/Theme.Eventhorizon" />
 
+        <activity
+            android:name=".ui.activities.ControllerInfoActivity"
+            android:exported="false"
+            android:label="Controllers"
+            android:theme="@style/Theme.Eventhorizon" />
+
         <service
             android:name=".system.DnsBlockerService"
             android:permission="android.permission.BIND_VPN_SERVICE"
