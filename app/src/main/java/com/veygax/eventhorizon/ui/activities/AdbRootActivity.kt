@@ -15,6 +15,7 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -24,6 +25,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.tooling.preview.Preview
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -98,6 +100,8 @@ fun AdbRootScreen(onBack: () -> Unit, actions: AdbRootActions) {
     var isProcessing by remember { mutableStateOf(false) }
     var pairingPort by remember { mutableStateOf("") }
     var pairingCode by remember { mutableStateOf("") }
+    var pairingCompleted by remember { mutableStateOf(false) }
+    var devicePort by remember { mutableStateOf("") }
 
     val adbHomeDir = remember { actions.getAdbHomeDir() }
 
@@ -156,71 +160,114 @@ fun AdbRootScreen(onBack: () -> Unit, actions: AdbRootActions) {
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
                 modifier = Modifier.fillMaxWidth()
             ) {
+                if (pairingCompleted) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                Icons.Filled.CheckCircle,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("2. Paired via Wireless ADB", fontWeight = FontWeight.Bold)
+                        }
+                        TextButton(onClick = { pairingCompleted = false }) {
+                            Text("Re-pair")
+                        }
+                    }
+                } else {
+                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("2. Pair via Wireless ADB", fontWeight = FontWeight.Bold)
+                        Text("In Developer Options → Wireless ADB → 'Pair device with pairing code'. Enter the port and 6-digit code shown on screen.")
+                        OutlinedTextField(
+                            value = pairingPort,
+                            onValueChange = { pairingPort = it.filter { c -> c.isDigit() } },
+                            label = { Text("Pairing Port") },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        OutlinedTextField(
+                            value = pairingCode,
+                            onValueChange = { pairingCode = it.filter { c -> c.isDigit() } },
+                            label = { Text("Pairing Code (6 digits)") },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Button(
+                            onClick = {
+                                if (isProcessing) return@Button
+                                val port = pairingPort.trim()
+                                val code = pairingCode.trim()
+                                if (port.isEmpty() || code.isEmpty()) {
+                                    log("Error: Please enter both the pairing port and code.")
+                                    return@Button
+                                }
+                                isProcessing = true
+                                scope.launch {
+                                    val adbFile = actions.getAdbBinary()
+                                    if (adbFile == null) {
+                                        log("Error: Could not locate ADB binary in native libraries.")
+                                        isProcessing = false
+                                        return@launch
+                                    }
+                                    log("Pairing with 127.0.0.1:$port using code $code ...")
+                                    val pairResult = executeAdb(adbFile, adbHomeDir, "pair", "127.0.0.1:$port", code)
+                                    val pairOutput = pairResult.trim().ifEmpty { "No output from pair command." }
+                                    log(pairOutput)
+
+                                    val paired = pairOutput.contains("Successfully paired", ignoreCase = true)
+                                    if (paired) {
+                                        pairingCompleted = true
+                                        log("Pairing successful! Now set the Connection Port below using the IP address & Port shown on the Wireless debugging screen.")
+                                    } else {
+                                        log("Pairing may have failed. Check the port and code and try again.")
+                                    }
+                                    isProcessing = false
+                                }
+                            },
+                            enabled = !isProcessing,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(if (isProcessing) "Pairing..." else "Pair Device")
+                        }
+                    }
+                }
+            }
+
+            // --- Connection Port Section ---
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
+                modifier = Modifier.fillMaxWidth()
+            ) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("2. Pair via Wireless ADB", fontWeight = FontWeight.Bold)
-                    Text("In Developer Options → Wireless ADB → 'Pair device with pairing code'. Enter the port and 6-digit code shown on screen.")
+                    Text("3. Set Connection Port", fontWeight = FontWeight.Bold)
+                    Text("In Developer Options → Wireless ADB, look at the 'IP address & Port' field (not the pairing screen). Enter just the port number shown after the colon.")
                     OutlinedTextField(
-                        value = pairingPort,
-                        onValueChange = { pairingPort = it.filter { c -> c.isDigit() } },
-                        label = { Text("Pairing Port") },
+                        value = devicePort,
+                        onValueChange = { devicePort = it.filter { c -> c.isDigit() } },
+                        label = { Text("Connection Port") },
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         modifier = Modifier.fillMaxWidth()
                     )
-                    OutlinedTextField(
-                        value = pairingCode,
-                        onValueChange = { pairingCode = it.filter { c -> c.isDigit() } },
-                        label = { Text("Pairing Code (6 digits)") },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Button(
-                        onClick = {
-                            if (isProcessing) return@Button
-                            val port = pairingPort.trim()
-                            val code = pairingCode.trim()
-                            if (port.isEmpty() || code.isEmpty()) {
-                                log("Error: Please enter both the pairing port and code.")
-                                return@Button
-                            }
-                            isProcessing = true
-                            scope.launch {
-                                val adbFile = actions.getAdbBinary()
-                                if (adbFile == null) {
-                                    log("Error: Could not locate ADB binary in native libraries.")
-                                    isProcessing = false
-                                    return@launch
-                                }
-                                log("Pairing with 127.0.0.1:$port using code $code ...")
-                                val pairResult = executeAdb(adbFile, adbHomeDir, "pair", "127.0.0.1:$port", code)
-                                val pairOutput = pairResult.trim().ifEmpty { "No output from pair command." }
-                                log(pairOutput)
-
-                                val paired = pairOutput.contains("Successfully paired", ignoreCase = true)
-                                if (paired) {
-                                    log("Pairing successful! Switching device to TCP port 5555...")
-                                    val tcpipResult = executeAdb(adbFile, adbHomeDir, "-s", "127.0.0.1:$port", "tcpip", "5555")
-                                    log(tcpipResult.trim().ifEmpty { "No output from tcpip command." })
-                                    delay(1000)
-                                    log("Ready. You can now press 'Escalate Privileges'.")
-                                } else {
-                                    log("Pairing may have failed. Check the port and code and try again.")
-                                }
-                                isProcessing = false
-                            }
-                        },
-                        enabled = !isProcessing,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(if (isProcessing) "Pairing..." else "Pair Device")
-                    }
                 }
             }
 
             Button(
                 onClick = {
                     if (isProcessing) return@Button
+                    if (devicePort.trim().isEmpty()) {
+                        log("Error: Please enter the Connection Port from the Wireless debugging screen first.")
+                        return@Button
+                    }
                     isProcessing = true
                     scope.launch {
                         val adbFile = actions.getAdbBinary()
@@ -231,27 +278,43 @@ fun AdbRootScreen(onBack: () -> Unit, actions: AdbRootActions) {
                         }
 
                         log("Connecting to Wireless ADB...")
-                        val connectResult = executeAdb(adbFile, adbHomeDir, "connect", "127.0.0.1:5555")
+                        val connectResult = executeAdb(adbFile, adbHomeDir, "connect", "127.0.0.1:$devicePort")
                         log(connectResult.trim().ifEmpty { "No output from connect command." })
 
                         delay(1500)
 
                         val devicesResult = executeAdb(adbFile, adbHomeDir, "devices")
                         log("Devices:\n${devicesResult.trim()}")
-                        if (!devicesResult.contains("127.0.0.1:5555\tdevice")) {
+                        if (!devicesResult.contains("127.0.0.1:$devicePort\tdevice")) {
                             log("Error: Device not found or unauthorized. Check that pairing completed successfully and Wireless ADB is still enabled.")
                             isProcessing = false
                             return@launch
                         }
 
+                        log("Switching to a fixed TCP port (5555) so it survives the root restart...")
+                        val tcpipResult = executeAdb(adbFile, adbHomeDir, "-s", "127.0.0.1:$devicePort", "tcpip", "5555")
+                        log(tcpipResult.trim().ifEmpty { "No output from tcpip command." })
+                        delay(1500)
+
+                        val reconnectResult = executeAdb(adbFile, adbHomeDir, "connect", "127.0.0.1:5555")
+                        log(reconnectResult.trim().ifEmpty { "No output from connect command." })
+
+                        val fixedPortDevices = executeAdb(adbFile, adbHomeDir, "devices")
+                        if (!fixedPortDevices.contains("127.0.0.1:5555\tdevice")) {
+                            log("Error: Could not reconnect on port 5555 after switching. Aborting.")
+                            isProcessing = false
+                            return@launch
+                        }
+                        devicePort = "5555"
+
                         log("Requesting root access via ADB root...")
-                        executeAdb(adbFile, adbHomeDir, "-s", "127.0.0.1:5555", "root")
+                        executeAdb(adbFile, adbHomeDir, "-s", "127.0.0.1:$devicePort", "root")
                         delay(2500)
 
-                        executeAdb(adbFile, adbHomeDir, "connect", "127.0.0.1:5555")
+                        executeAdb(adbFile, adbHomeDir, "connect", "127.0.0.1:$devicePort")
                         
                         log("Verifying root privileges...")
-                        val identity = executeAdb(adbFile, adbHomeDir, "-s", "127.0.0.1:5555", "shell", "whoami").trim()
+                        val identity = executeAdb(adbFile, adbHomeDir, "-s", "127.0.0.1:$devicePort", "shell", "whoami").trim()
                         log("Current user: $identity")
                         
                         if (identity == "root") {
@@ -261,18 +324,18 @@ fun AdbRootScreen(onBack: () -> Unit, actions: AdbRootActions) {
                             log("Warning: Did not verify root access.")
                         }
 
+                        isProcessing = false
+
                         executeAdb(
-                            adbFile, adbHomeDir, "-s", "127.0.0.1:5555", "shell", "pm", "grant",
+                            adbFile, adbHomeDir, "-s", "127.0.0.1:$devicePort", "shell", "pm", "grant",
                             "com.veygax.eventhorizon", "android.permission.WRITE_SECURE_SETTINGS"
                         )
-
-                        isProcessing = false
                     }
                 },
                 modifier = Modifier.fillMaxWidth(),
                 enabled = !isProcessing
             ) {
-                Text(if (isProcessing) "Processing..." else "3. Escalate Privileges")
+                Text(if (isProcessing) "Processing..." else "4. Escalate Privileges")
             }
 
             Button(
@@ -288,7 +351,7 @@ fun AdbRootScreen(onBack: () -> Unit, actions: AdbRootActions) {
                         }
 
                         log("Fetching current boot slot...")
-                        val slotSuffix = executeAdb(adbFile, adbHomeDir, "-s", "127.0.0.1:5555", "shell", "getprop", "ro.boot.slot_suffix").trim()
+                        val slotSuffix = executeAdb(adbFile, adbHomeDir, "-s", "127.0.0.1:$devicePort", "shell", "getprop", "ro.boot.slot_suffix").trim()
                         
                         if (slotSuffix != "_a" && slotSuffix != "_b") {
                             log("Error: Could not determine valid boot slot. Got: '$slotSuffix'")
@@ -303,10 +366,10 @@ fun AdbRootScreen(onBack: () -> Unit, actions: AdbRootActions) {
                         val destFile = "$destDir/boot.img"
 
                         log("Creating destination directory: $destDir")
-                        executeAdb(adbFile, adbHomeDir, "-s", "127.0.0.1:5555", "shell", "mkdir", "-p", destDir)
+                        executeAdb(adbFile, adbHomeDir, "-s", "127.0.0.1:$devicePort", "shell", "mkdir", "-p", destDir)
 
                         log("Extracting $sourceBlock to $destFile...")
-                        val copyResult = executeAdb(adbFile, adbHomeDir, "-s", "127.0.0.1:5555", "shell", "dd", "if=$sourceBlock", "of=$destFile")
+                        val copyResult = executeAdb(adbFile, adbHomeDir, "-s", "127.0.0.1:$devicePort", "shell", "dd", "if=$sourceBlock", "of=$destFile")
                         if (copyResult.isNotBlank() && !copyResult.contains("records in")) log(copyResult.trim())
                         
                         log("Extracting Magisk patcher utilities locally...")
@@ -320,9 +383,9 @@ fun AdbRootScreen(onBack: () -> Unit, actions: AdbRootActions) {
                         val remotePatchDir = "/data/adb/eventhorizon/magisk_patcher"
                         log("Pushing patcher utilities to $remotePatchDir...")
                         
-                        executeAdb(adbFile, adbHomeDir, "-s", "127.0.0.1:5555", "shell", "mkdir", "-p", remotePatchDir)
+                        executeAdb(adbFile, adbHomeDir, "-s", "127.0.0.1:$devicePort", "shell", "mkdir", "-p", remotePatchDir)
                         
-                        val pushResult = executeAdb(adbFile, adbHomeDir, "-s", "127.0.0.1:5555", "push", localPatchDir.absolutePath, "/data/adb/eventhorizon/")
+                        val pushResult = executeAdb(adbFile, adbHomeDir, "-s", "127.0.0.1:$devicePort", "push", localPatchDir.absolutePath, "/data/adb/eventhorizon/")
                         if (pushResult.contains("error", ignoreCase = true) || pushResult.contains("failed", ignoreCase = true)) {
                             log("Error pushing files to root directory: $pushResult")
                         }
@@ -336,16 +399,16 @@ fun AdbRootScreen(onBack: () -> Unit, actions: AdbRootActions) {
                                 "export MAGISKDIR=$remotePatchDir && " +
                                 "./boot_patch.sh $destFile"
                         
-                        val patchOutput = executeAdb(adbFile, adbHomeDir, "-s", "127.0.0.1:5555", "shell", patchCmd)
+                        val patchOutput = executeAdb(adbFile, adbHomeDir, "-s", "127.0.0.1:$devicePort", "shell", patchCmd)
                         
                         if (patchOutput.contains("- Repacking boot image")) {
                             val patchedImgPath = "$remotePatchDir/new-boot.img"
                             val patchedDestFile = "$destDir/patched_boot.img"
                             
                             log("Moving patched image to $patchedDestFile")
-                            executeAdb(adbFile, adbHomeDir, "-s", "127.0.0.1:5555", "shell", "mv", patchedImgPath, patchedDestFile)
+                            executeAdb(adbFile, adbHomeDir, "-s", "127.0.0.1:$devicePort", "shell", "mv", patchedImgPath, patchedDestFile)
                             
-                            val verifyOutput = executeAdb(adbFile, adbHomeDir, "-s", "127.0.0.1:5555", "shell", "ls", "-lh", patchedDestFile).trim()
+                            val verifyOutput = executeAdb(adbFile, adbHomeDir, "-s", "127.0.0.1:$devicePort", "shell", "ls", "-lh", patchedDestFile).trim()
                             if (verifyOutput.contains("No such file")) {
                                 log("Error: Patched image not found at destination.")
                             } else {
@@ -353,13 +416,13 @@ fun AdbRootScreen(onBack: () -> Unit, actions: AdbRootActions) {
                                 log(verifyOutput)
                                 
                                 log("Flashing patched image back to $sourceBlock...")
-                                val flashResult = executeAdb(adbFile, adbHomeDir, "-s", "127.0.0.1:5555", "shell", "dd", "if=$patchedDestFile", "of=$sourceBlock", "bs=4096", "conv=fsync")
+                                val flashResult = executeAdb(adbFile, adbHomeDir, "-s", "127.0.0.1:$devicePort", "shell", "dd", "if=$patchedDestFile", "of=$sourceBlock", "bs=4096", "conv=fsync")
 
                                 if (flashResult.isNotBlank() && !flashResult.contains("records in")) {
                                     log("Warning/Error during flash: \n${flashResult.trim()}")
                                 } else {
                                     log("Successfully flashed Magisk to the active slot! Rebooting...")
-                                    executeAdb(adbFile, adbHomeDir, "-s", "127.0.0.1:5555", "reboot")
+                                    executeAdb(adbFile, adbHomeDir, "-s", "127.0.0.1:$devicePort", "reboot")
                                 }
                             }
                         } else {
@@ -374,9 +437,9 @@ fun AdbRootScreen(onBack: () -> Unit, actions: AdbRootActions) {
                 enabled = !isProcessing && hasRoot 
             ) {
                 Text(
-                    if (!hasRoot) "4. Patch boot.img (Requires Root)" 
+                    if (!hasRoot) "5. Patch boot.img (Requires Root)" 
                     else if (isProcessing) "Processing..." 
-                    else "4. Patch boot.img"
+                    else "5. Patch boot.img"
                 )
             }
 
