@@ -249,7 +249,7 @@ fun AdbRootScreen(onBack: () -> Unit, actions: AdbRootActions) {
             ) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("3. Set Connection Port", fontWeight = FontWeight.Bold)
-                    Text("In Developer Options → Wireless ADB, look at the 'IP address & Port' field (not the pairing screen). Enter just the port number shown after the colon.")
+                    Text("In Developer Options → Wireless ADB, look at the 'IP address & Port' field.")
                     OutlinedTextField(
                         value = devicePort,
                         onValueChange = { devicePort = it.filter { c -> c.isDigit() } },
@@ -279,9 +279,9 @@ fun AdbRootScreen(onBack: () -> Unit, actions: AdbRootActions) {
 
                         log("Connecting to Wireless ADB...")
                         val connectResult = executeAdb(adbFile, adbHomeDir, "connect", "127.0.0.1:$devicePort")
-                        log(connectResult.trim().ifEmpty { "No output from connect command." })
+                        if (connectResult.isNotBlank()) log(connectResult.trim())
 
-                        delay(1500)
+                        delay(2500)
 
                         val devicesResult = executeAdb(adbFile, adbHomeDir, "devices")
                         log("Devices:\n${devicesResult.trim()}")
@@ -291,13 +291,12 @@ fun AdbRootScreen(onBack: () -> Unit, actions: AdbRootActions) {
                             return@launch
                         }
 
-                        log("Switching to a fixed TCP port (5555) so it survives the root restart...")
                         val tcpipResult = executeAdb(adbFile, adbHomeDir, "-s", "127.0.0.1:$devicePort", "tcpip", "5555")
-                        log(tcpipResult.trim().ifEmpty { "No output from tcpip command." })
+                        if (tcpipResult.isNotBlank()) log(tcpipResult.trim())
                         delay(1500)
 
                         val reconnectResult = executeAdb(adbFile, adbHomeDir, "connect", "127.0.0.1:5555")
-                        log(reconnectResult.trim().ifEmpty { "No output from connect command." })
+                        if (reconnectResult.isNotBlank()) log(reconnectResult.trim())
 
                         val fixedPortDevices = executeAdb(adbFile, adbHomeDir, "devices")
                         if (!fixedPortDevices.contains("127.0.0.1:5555\tdevice")) {
@@ -307,21 +306,27 @@ fun AdbRootScreen(onBack: () -> Unit, actions: AdbRootActions) {
                         }
                         devicePort = "5555"
 
-                        log("Requesting root access via ADB root...")
                         executeAdb(adbFile, adbHomeDir, "-s", "127.0.0.1:$devicePort", "root")
-                        delay(2500)
+                        delay(1500)
 
-                        executeAdb(adbFile, adbHomeDir, "connect", "127.0.0.1:$devicePort")
-                        
-                        log("Verifying root privileges...")
-                        val identity = executeAdb(adbFile, adbHomeDir, "-s", "127.0.0.1:$devicePort", "shell", "whoami").trim()
+                        var identity = ""
+                        val maxAttempts = 3
+                        for (attempt in 1..maxAttempts) {
+                            executeAdb(adbFile, adbHomeDir, "connect", "127.0.0.1:$devicePort")
+                            identity = executeAdb(adbFile, adbHomeDir, "-s", "127.0.0.1:$devicePort", "shell", "whoami").trim()
+
+                            if (identity == "root") break
+
+                            log("Attempt $attempt/$maxAttempts: got '$identity', retrying...")
+                            delay(1500)
+                        }
                         log("Current user: $identity")
-                        
+
                         if (identity == "root") {
                             hasRoot = true
                         } else {
                             hasRoot = false
-                            log("Warning: Did not verify root access.")
+                            log("Warning: Did not verify root access after $maxAttempts attempts.")
                         }
 
                         isProcessing = false
@@ -350,7 +355,6 @@ fun AdbRootScreen(onBack: () -> Unit, actions: AdbRootActions) {
                             return@launch
                         }
 
-                        log("Fetching current boot slot...")
                         val slotSuffix = executeAdb(adbFile, adbHomeDir, "-s", "127.0.0.1:$devicePort", "shell", "getprop", "ro.boot.slot_suffix").trim()
                         
                         if (slotSuffix != "_a" && slotSuffix != "_b") {
@@ -365,14 +369,11 @@ fun AdbRootScreen(onBack: () -> Unit, actions: AdbRootActions) {
                         val destDir = "/data/adb/eventhorizon"
                         val destFile = "$destDir/boot.img"
 
-                        log("Creating destination directory: $destDir")
                         executeAdb(adbFile, adbHomeDir, "-s", "127.0.0.1:$devicePort", "shell", "mkdir", "-p", destDir)
 
-                        log("Extracting $sourceBlock to $destFile...")
                         val copyResult = executeAdb(adbFile, adbHomeDir, "-s", "127.0.0.1:$devicePort", "shell", "dd", "if=$sourceBlock", "of=$destFile")
                         if (copyResult.isNotBlank() && !copyResult.contains("records in")) log(copyResult.trim())
                         
-                        log("Extracting Magisk patcher utilities locally...")
                         val localPatchDir = actions.getMagiskPatcherDir()
                         if (localPatchDir == null) {
                             log("Error: Failed to prepare Magisk patch files.")
@@ -381,15 +382,14 @@ fun AdbRootScreen(onBack: () -> Unit, actions: AdbRootActions) {
                         }
                         
                         val remotePatchDir = "/data/adb/eventhorizon/magisk_patcher"
-                        log("Pushing patcher utilities to $remotePatchDir...")
-                        
+
                         executeAdb(adbFile, adbHomeDir, "-s", "127.0.0.1:$devicePort", "shell", "mkdir", "-p", remotePatchDir)
                         
                         val pushResult = executeAdb(adbFile, adbHomeDir, "-s", "127.0.0.1:$devicePort", "push", localPatchDir.absolutePath, "/data/adb/eventhorizon/")
                         if (pushResult.contains("error", ignoreCase = true) || pushResult.contains("failed", ignoreCase = true)) {
                             log("Error pushing files to root directory: $pushResult")
                         }
-                        
+
                         log("Patching boot image with Magisk 30.6...")
                         
                         val patchCmd = "cd $remotePatchDir && " +
@@ -530,7 +530,10 @@ suspend fun executeAdb(adbFile: File, homeDir: String, vararg args: String): Str
         
         process = ProcessBuilder(command)
             .redirectErrorStream(true)
-            .apply { environment()["HOME"] = homeDir }
+            .apply {
+                environment()["HOME"] = homeDir
+                environment()["TMPDIR"] = homeDir
+            }
             .start()
             
         val output = process.inputStream.bufferedReader().use { it.readText() }
