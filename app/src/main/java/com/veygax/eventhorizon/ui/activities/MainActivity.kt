@@ -721,7 +721,7 @@ fun EventHorizonApp(
         ).absolutePath
 
         val exploitDir = context.getDir("exploit", Context.MODE_PRIVATE)
-        val launchPath = File(exploitDir, "launch.sh").absolutePath
+        val singularityMagiskPath = File(exploitDir, "singularity_magisk.sh").absolutePath
 
         AlertDialog(
             onDismissRequest = {
@@ -737,7 +737,7 @@ fun EventHorizonApp(
                 ) {
                     Text(
                         "Run the following commands from your computer. (YOU NEED ADB)" +
-                        "The app will not execute them automatically due to the fact that i did not code that yet."
+                        "The app will not execute them automatically due to the fact that i did not learn that much android app stuff."
                     )
                     Text(
                         "1. Copy pancake:",
