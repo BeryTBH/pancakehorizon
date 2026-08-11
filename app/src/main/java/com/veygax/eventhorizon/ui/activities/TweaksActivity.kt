@@ -131,7 +131,7 @@ object StatusChecks {
         var isInterceptorEnabled: Boolean = false,
         var isUsbInterceptorEnabled: Boolean = false,
         var isOtaBlockerActive: Boolean = false,
-        var isOvrLoaderOverrideActive: Boolean = false,
+        //var isOvrLoaderOverrideActive: Boolean = false,
         var isRootBlockerManuallyEnabled: Boolean = false,
         var isCpuPerfMode: Boolean = false,
         var isWirelessAdbEnabled: Boolean = false,
@@ -203,9 +203,9 @@ object StatusChecks {
                     line.startsWith(PREFIX_OTA_BLOCK) -> {
                         states.isOtaBlockerActive = line.substringAfter(PREFIX_OTA_BLOCK).trim().isNotEmpty()
                     }
-                    line.startsWith(PREFIX_OVR_LOADER) -> {
-                        states.isOvrLoaderOverrideActive = line.substringAfter(PREFIX_OVR_LOADER).trim().isNotEmpty()
-                    }
+                    //line.startsWith(PREFIX_OVR_LOADER) -> {
+                        //states.isOvrLoaderOverrideActive = line.substringAfter(PREFIX_OVR_LOADER).trim().isNotEmpty()
+                    //}
                     line.startsWith(PREFIX_CPU_GOV) -> {
                         states.isCpuPerfMode = line.substringAfter(PREFIX_CPU_GOV).trim() == "performance"
                     }
@@ -610,10 +610,10 @@ fun TweaksScreen(
     var otaLiveStatus by remember { mutableStateOf("Unknown") }
 
     // OVR Platform Loader Runtime Override
-    val initialOvrLoaderOverrideOnBoot = getInitialState("ovr_loader_override_on_boot", true)
-    val initialOvrLoaderOverrideState = getInitialState("ovr_loader_override_running", initialOvrLoaderOverrideOnBoot)
-    var isOvrLoaderOverrideEnabled by remember { mutableStateOf(initialOvrLoaderOverrideState) }
-    var ovrLoaderOverrideOnBoot by rememberSaveable { mutableStateOf(initialOvrLoaderOverrideOnBoot) }
+    //val initialOvrLoaderOverrideOnBoot = getInitialState("ovr_loader_override_on_boot", true)
+    //val initialOvrLoaderOverrideState = getInitialState("ovr_loader_override_running", initialOvrLoaderOverrideOnBoot)
+    //var isOvrLoaderOverrideEnabled by remember { mutableStateOf(initialOvrLoaderOverrideState) }
+    //var ovrLoaderOverrideOnBoot by rememberSaveable { mutableStateOf(initialOvrLoaderOverrideOnBoot) }
 
     // Proximity Sensor
     val initialProxSensorDisabledState = getInitialState("prox_sensor_disabled")
@@ -665,7 +665,7 @@ fun TweaksScreen(
                     isInterceptorEnabled = false
                     isUsbInterceptorEnabled = false
                     isFridaServerRunning = false
-                    isOvrLoaderOverrideEnabled = false
+                    //isOvrLoaderOverrideEnabled = false
                 }
             }
         }
@@ -700,7 +700,7 @@ fun TweaksScreen(
                             putBoolean("intercept_startup_apps", states.isInterceptorEnabled)
                             putBoolean("usb_interceptor_running", states.isUsbInterceptorEnabled)
                             putBoolean("ota_blocker_running", states.isOtaBlockerActive)
-                            putBoolean("ovr_loader_override_running", states.isOvrLoaderOverrideActive)
+                            //putBoolean("ovr_loader_override_running", states.isOvrLoaderOverrideActive)
                             putBoolean("root_blocker_is_running", states.isRootBlockerManuallyEnabled)
                             putBoolean("wireless_adb_is_running", states.isWirelessAdbEnabled)
                             putInt("ui_switch_state", states.uiSwitchState)
@@ -731,7 +731,7 @@ fun TweaksScreen(
                             isInterceptorEnabled = states.isInterceptorEnabled
                             isUsbInterceptorEnabled = states.isUsbInterceptorEnabled
                             isOtaBlockerEnabled = states.isOtaBlockerActive
-                            isOvrLoaderOverrideEnabled = states.isOvrLoaderOverrideActive
+                            //isOvrLoaderOverrideEnabled = states.isOvrLoaderOverrideActive
                             isRootBlockerManuallyEnabled = states.isRootBlockerManuallyEnabled
                             isCpuPerfMode = states.isCpuPerfMode
                             isWirelessAdbEnabled = states.isWirelessAdbEnabled
@@ -853,7 +853,7 @@ fun TweaksScreen(
                     putBoolean("intercept_startup_apps", states.isInterceptorEnabled)
                     putBoolean("usb_interceptor_running", states.isUsbInterceptorEnabled)
                     putBoolean("ota_blocker_running", states.isOtaBlockerActive)
-                    putBoolean("ovr_loader_override_running", states.isOvrLoaderOverrideActive)
+                    //putBoolean("ovr_loader_override_running", states.isOvrLoaderOverrideActive)
                     putBoolean("root_blocker_is_running", states.isRootBlockerManuallyEnabled)
                     putBoolean("wireless_adb_is_running", states.isWirelessAdbEnabled)
                     putInt("ui_switch_state", states.uiSwitchState)
@@ -877,7 +877,7 @@ fun TweaksScreen(
                 isInterceptorEnabled = states.isInterceptorEnabled
                 isUsbInterceptorEnabled = states.isUsbInterceptorEnabled
                 isOtaBlockerEnabled = states.isOtaBlockerActive
-                isOvrLoaderOverrideEnabled = states.isOvrLoaderOverrideActive
+                //isOvrLoaderOverrideEnabled = states.isOvrLoaderOverrideActive
                 isRootBlockerManuallyEnabled = states.isRootBlockerManuallyEnabled
                 isCpuPerfMode = states.isCpuPerfMode
                 isWirelessAdbEnabled = states.isWirelessAdbEnabled
