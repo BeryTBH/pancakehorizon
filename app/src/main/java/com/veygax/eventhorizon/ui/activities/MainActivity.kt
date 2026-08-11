@@ -260,6 +260,7 @@ fun EventHorizonApp(
     var isProcessRunning by remember { mutableStateOf(false) }
     var isRooted by remember { mutableStateOf(false) }
     var showAdbRootDialog by remember { mutableStateOf(false) }
+    var showRootPrompt by remember { mutableStateOf(false) }
 
     // --- State for the App Updater ---
     var isCheckingForUpdate by remember { mutableStateOf(false) }
@@ -519,18 +520,13 @@ fun EventHorizonApp(
             Button(
                 onClick = {
                     if (!isProcessRunning) {
-                        actions.executeExploit(context, onOutput = { line ->
-                            consoleText += line + "\n"
-                        }, onProcessComplete = {
-                            isProcessRunning = false
-                        })
-                        isProcessRunning = true
+                        showRootPrompt = true
                     }
                 },
                 modifier = Modifier.fillMaxWidth(),
                 enabled = !isProcessRunning && !isRooted && !actions.isPatched() && actions.isSupportedDevice()
             ) {
-                Text(if (isProcessRunning) "Rooting..." else "Root Now")
+                Text("Root Now")
             }
         }
 
@@ -713,6 +709,92 @@ fun EventHorizonApp(
                     )
                 ) {
                     Text("Later")
+                }
+            }
+        )
+    }
+
+    if (showRootPrompt) {
+        val pancakePath = File(
+            context.applicationInfo.nativeLibraryDir,
+            "libpancake.so"
+        ).absolutePath
+
+        val exploitDir = context.getDir("exploit", Context.MODE_PRIVATE)
+        val launchPath = File(exploitDir, "launch.sh").absolutePath
+
+        AlertDialog(
+            onDismissRequest = {
+                showRootPrompt = false
+            },
+            title = {
+                Text("Manual Root Guide")
+            },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text(
+                        "Run the following commands from your computer. (YOU NEED ADB)" +
+                        "The app will not execute them automatically due to the fact that i did not code that yet."
+                    )
+                    Text(
+                        "1. Copy pancake:",
+                        fontWeight = FontWeight.Bold
+                    )
+                    SelectionContainer {
+                        Text(
+                            text = "adb shell cp \"$pancakePath\" /data/local/tmp/pancake",
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 12.sp
+                        )
+                    }
+                    Text(
+                        "2. Copy the singularity magisk:",
+                        fontWeight = FontWeight.Bold
+                    )
+                    SelectionContainer {
+                        Text(
+                            text = "adb shell cp \"$singularityMagiskPath\" /data/local/tmp/singularity_magisk.sh",
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 12.sp
+                        )
+                    }
+                    Text(
+                        "3. Make them executable & run pancake:",
+                        fontWeight = FontWeight.Bold
+                    )
+                    SelectionContainer {
+                        Text(
+                            text = """
+                                adb shell chmod +x /data/local/tmp/pancake
+                                adb shell chmod +x /data/local/tmp/singularity_magisk.sh
+
+                                adb shell /data/local/tmp/pancake
+                            """.trimIndent(),
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 12.sp
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showRootPrompt = false
+                    }
+                ) {
+                    Text("Done")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showRootPrompt = false
+                    }
+                ) {
+                    Text("Cancel")
                 }
             }
         )
