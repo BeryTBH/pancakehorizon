@@ -5,7 +5,7 @@ plugins {
 }
 
 android {
-    namespace = "com.context.pancakehorizon"
+    namespace = "com.veygax.eventhorizon"
     compileSdk = 36
 
     defaultConfig {
