@@ -443,7 +443,7 @@ fun EventHorizonApp(
             ListItem(
                 headlineContent = { Text("Root on Boot") },
                 supportingContent = {
-                    Text(if (rootOnBoot) "Root on Startup" else "Won't Root on Startup")
+                    Text(if (rootOnBoot) "Root on startup" else "Won't root on startup")
                 },
                 leadingContent = {
                     Icon(
