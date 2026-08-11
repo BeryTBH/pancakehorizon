@@ -207,7 +207,7 @@ class TweakService : Service() {
     private var isInterceptorRunning: Boolean = false
     private var isUsbInterceptorRunning = false
     private var isOtaBlockerRunning = false
-    private var isOvrLoaderOverrideRunning = false
+    //private var isOvrLoaderOverrideRunning = false
     private var isGpuMinFreqRunning: Boolean = false
     private var isGpuMaxFreqRunning: Boolean = false
     private var isFridaRunning: Boolean = false
@@ -220,7 +220,7 @@ class TweakService : Service() {
     private lateinit var interceptorScriptFile: File
     private lateinit var usbInterceptorScriptFile: File
     private lateinit var otaBlockerScriptFile: File
-    private lateinit var ovrLoaderOverrideScriptFile: File
+    //private lateinit var ovrLoaderOverrideScriptFile: File
     private lateinit var gpuMinFreqScriptFile: File
     private lateinit var gpuMaxFreqScriptFile: File
 
@@ -233,7 +233,7 @@ class TweakService : Service() {
         interceptorScriptFile = File(filesDir, "interceptor.sh")
         usbInterceptorScriptFile = File(filesDir, "usb_interceptor.sh")
         otaBlockerScriptFile = File(filesDir, "ota_blocker.sh")
-        ovrLoaderOverrideScriptFile = File(filesDir, "ovr_loader_override.sh")
+        //ovrLoaderOverrideScriptFile = File(filesDir, "ovr_loader_override.sh")
         gpuMinFreqScriptFile = File(filesDir, GpuUtils.GPU_MIN_FREQ_SCRIPT_NAME)
         gpuMaxFreqScriptFile = File(filesDir, GpuUtils.GPU_MAX_FREQ_SCRIPT_NAME)
 
@@ -254,7 +254,7 @@ class TweakService : Service() {
         val runningInterceptor = RootUtils.runAsRoot("ps -ef | grep interceptor.sh | grep -v grep").trim().isNotEmpty()
         val runningUsbInterceptor = RootUtils.runAsRoot("ps -ef | grep usb_interceptor.sh | grep -v grep").trim().isNotEmpty()
         val runningOtaBlocker = RootUtils.runAsRoot("ps -ef | grep ota_blocker.sh | grep -v grep").trim().isNotEmpty()
-        val runningOvrLoaderOverride = RootUtils.runAsRoot("ps -ef | grep ovr_loader_override.sh | grep -v grep").trim().isNotEmpty()
+        //val runningOvrLoaderOverride = RootUtils.runAsRoot("ps -ef | grep ovr_loader_override.sh | grep -v grep").trim().isNotEmpty()
         val runningGpuMin = RootUtils.runAsRoot("ps -ef | grep ${GpuUtils.GPU_MIN_FREQ_SCRIPT_NAME} | grep -v grep").trim().isNotEmpty()
         val runningGpuMax = RootUtils.runAsRoot("ps -ef | grep ${GpuUtils.GPU_MAX_FREQ_SCRIPT_NAME} | grep -v grep").trim().isNotEmpty()
         val runningFrida = RootUtils.runAsRoot("ps -ef | grep frida-server | grep -v grep").trim().isNotEmpty()
@@ -265,7 +265,7 @@ class TweakService : Service() {
         isInterceptorRunning = runningInterceptor
         isUsbInterceptorRunning = runningUsbInterceptor
         isOtaBlockerRunning = runningOtaBlocker
-        isOvrLoaderOverrideRunning = runningOvrLoaderOverride
+        //isOvrLoaderOverrideRunning = runningOvrLoaderOverride
         isGpuMinFreqRunning = runningGpuMin
         isGpuMaxFreqRunning = runningGpuMax
         isFridaRunning = runningFrida
@@ -356,14 +356,14 @@ class TweakService : Service() {
                 ACTION_START_OTA_BLOCKER -> startOtaBlocker()
                 ACTION_STOP_OTA_BLOCKER -> stopOtaBlocker()
                 ACTION_START_OVR_LOADER_OVERRIDE -> {
-                    startOvrLoaderOverride()
+                    //startOvrLoaderOverride()
                     sharedPrefs.edit()
                         .putBoolean("ovr_loader_override_running", true)
                         .putBoolean("ovr_loader_override_on_boot", true)
                         .apply()
                 }
                 ACTION_STOP_OVR_LOADER_OVERRIDE -> {
-                    stopOvrLoaderOverride()
+                    //stopOvrLoaderOverride()
                     sharedPrefs.edit()
                         .putBoolean("ovr_loader_override_running", false)
                         .putBoolean("ovr_loader_override_on_boot", false)
@@ -594,6 +594,7 @@ class TweakService : Service() {
         updateServiceState()
     }
 
+    /*
     private suspend fun startOvrLoaderOverride() {
         RootUtils.runAsRoot("pkill -f ovr_loader_override.sh || true", useMountMaster = true)
 
@@ -635,10 +636,10 @@ class TweakService : Service() {
         RootUtils.runAsRoot(stopCommand, useMountMaster = true)
         isOvrLoaderOverrideRunning = false
         updateServiceState()
-    }
+    }*/
 
     private fun isAnyTweakRunning(): Boolean {
-        return isRgbRunning || isCustomLedRunning || isPowerLedRunning || isMinFreqRunning || isInterceptorRunning || isUsbInterceptorRunning || isOtaBlockerRunning || isOvrLoaderOverrideRunning || isGpuMinFreqRunning || isGpuMaxFreqRunning || isFridaRunning
+        return isRgbRunning || isCustomLedRunning || isPowerLedRunning || isMinFreqRunning || isInterceptorRunning || isUsbInterceptorRunning || isOtaBlockerRunning /*|| isOvrLoaderOverrideRunning ||*/ isGpuMinFreqRunning || isGpuMaxFreqRunning || isFridaRunning
     }
     
     private suspend fun stopAllTweaksAndService() {
@@ -650,7 +651,7 @@ class TweakService : Service() {
         stopInterceptor()
         stopUsbInterceptor()
         stopOtaBlocker()
-        stopOvrLoaderOverride()
+        //stopOvrLoaderOverride()
         stopFrida()
 
         // Broadcast that all tweaks have been stopped before the service dies.
