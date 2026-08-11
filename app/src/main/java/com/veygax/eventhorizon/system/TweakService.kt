@@ -639,7 +639,7 @@ class TweakService : Service() {
     }*/
 
     private fun isAnyTweakRunning(): Boolean {
-        return isRgbRunning || isCustomLedRunning || isPowerLedRunning || isMinFreqRunning || isInterceptorRunning || isUsbInterceptorRunning || isOtaBlockerRunning /*|| isOvrLoaderOverrideRunning ||*/ isGpuMinFreqRunning || isGpuMaxFreqRunning || isFridaRunning
+        return isRgbRunning || isCustomLedRunning || isPowerLedRunning || isMinFreqRunning || isInterceptorRunning || isUsbInterceptorRunning || isOtaBlockerRunning /*|| isOvrLoaderOverrideRunning */|| isGpuMinFreqRunning || isGpuMaxFreqRunning || isFridaRunning
     }
     
     private suspend fun stopAllTweaksAndService() {
