@@ -5,11 +5,11 @@ plugins {
 }
 
 android {
-    namespace = "com.veygax.eventhorizon"
+    namespace = "com.context.pancakehorizon"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.veygax.eventhorizon"
+        applicationId = "com.context.pancakehorizon"
         minSdk = 24
         targetSdk = 36
         versionCode = 24
