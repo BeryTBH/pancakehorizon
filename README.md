@@ -1,10 +1,12 @@
-![eventhorizon icon](https://github.com/veygax/eventhorizon/blob/main/app/src/main/ic_launcher-playstore.png)
+![pancakehorizon icon](https://github.com/BeryTBH/pancakehorizon/blob/main/app/src/main/ic_launcher-playstore.png)
 
-# eventhorizon
+# pancakehorizon
 
-eventhorizon is an Android root utility for lawfully owned Meta Quest devices.
+pancakehorizon is an Android root utility for lawfully owned Meta Quest devices.
 It provides device-owner controls for maintenance, diagnostics, research, and
 system administration on rooted or unlocked-bootloader headsets.
+
+it uses the pancake exploit for versions on v2.4 and above, below not tested
 
 ## Features
 

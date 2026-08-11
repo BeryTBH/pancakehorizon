@@ -173,7 +173,7 @@ class MainActivity : ComponentActivity(), EventHorizonActions {
     override fun getDeviceName(): String = Build.PRODUCT
 
     override fun isSupportedDevice(): Boolean {
-        return getDeviceName() == "eureka" || getDeviceName() == "panther"
+        return getDeviceName() == "eureka" || getDeviceName() == "panther" || getDeviceName() == "hollywood"
     }
 
     @RequiresApi(Build.VERSION_CODES.O)
@@ -286,10 +286,10 @@ fun EventHorizonApp(
 
             isCheckingForUpdate = true
 
-            val stableOwner = "veygax"
-            val stableRepo = "eventhorizon"
-            val devOwner = "Lumince"
-            val devRepo = "eventhorizon"
+            val stableOwner = "BeryTBH"
+            val stableRepo = "pancakehorizon"
+            val devOwner = "BeryTBH"
+            val devRepo = "pancakehorizon"
 
             val release = when (updateChannel) {
                 "dev" -> {
@@ -364,7 +364,7 @@ fun EventHorizonApp(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = "eventhorizon",
+                text = "pancakehorizon",
                 style = MaterialTheme.typography.headlineLarge,
                 color = MaterialTheme.colorScheme.primary
             )
@@ -390,7 +390,7 @@ fun EventHorizonApp(
         Spacer(modifier = Modifier.height(8.dp))
 
         Text(
-            text = "root for the meta surveillance device by veygax, lumince, zhuowei and freexr",
+            text = "root for the meta surveillance device by veygax, lumince, zhuowei and freexr, forked by context.smali",
             style = MaterialTheme.typography.bodyLarge,
             modifier = Modifier.fillMaxWidth(),
             textAlign = TextAlign.Left,
@@ -402,7 +402,7 @@ fun EventHorizonApp(
         ListItem(
             headlineContent = { Text("Root Status") },
             supportingContent = {
-                Text(if (isRooted) "Root Access Granted" else "Root not Granted")
+                Text(if (isRooted) "Root Access Granted" else "Root not granted")
             },
             leadingContent = {
                 Icon(
@@ -732,7 +732,7 @@ fun UpdateDialog(
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 if (!isDownloading) {
                     Text(
-                        "A new version of eventhorizon is available. Would you like to update?",
+                        "A new version of pancakehorizon is available. Would you like to update?",
                         style = MaterialTheme.typography.bodyMedium
                     )
                     Spacer(modifier = Modifier.height(16.dp))
@@ -887,7 +887,7 @@ fun UpdateOptionsDialog(
 }
 
 @RequiresApi(Build.VERSION_CODES.O)
-@Preview(showBackground = true, name = "Event Horizon Main Screen")
+@Preview(showBackground = true, name = "Pancake Horizon Main Screen")
 @Composable
 fun EventHorizonAppPreview() {
     val mockActions = object : EventHorizonActions {
