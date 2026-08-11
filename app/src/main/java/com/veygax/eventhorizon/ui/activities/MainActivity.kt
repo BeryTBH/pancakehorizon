@@ -163,8 +163,10 @@ class MainActivity : ComponentActivity(), EventHorizonActions {
     }
 
     private fun lastVersionForDevice(): Long = when(Build.BOARD) {
-        "eureka" -> 51154110129000520L
-        "panther" -> 1176880099000610L
+        "hollywood" -> 52222680028100150L
+        "eureka" -> 52345320035400520L
+        "panther" -> 3697600027800610L
+        "seacliff" -> 51483620027600340L
         else -> 0
     }
 
@@ -173,7 +175,8 @@ class MainActivity : ComponentActivity(), EventHorizonActions {
     override fun getDeviceName(): String = Build.PRODUCT
 
     override fun isSupportedDevice(): Boolean {
-        return getDeviceName() == "eureka" || getDeviceName() == "panther" || getDeviceName() == "hollywood"
+        //return getDeviceName() == "eureka" || getDeviceName() == "panther" || getDeviceName() == "hollywood"
+        return getDeviceName() == "hollywood"
     }
 
     @RequiresApi(Build.VERSION_CODES.O)
@@ -199,7 +202,7 @@ class MainActivity : ComponentActivity(), EventHorizonActions {
                     }
                 }
 
-                val executablePath = applicationInfo.nativeLibraryDir + "/libexploit.so"
+                val executablePath = applicationInfo.nativeLibraryDir + "/libpancake.so"
                 val launchShPath = File(extractedDir, "launch.sh").path
                 val processBuilder = ProcessBuilder()
                     .command(executablePath, "sh", launchShPath)
