@@ -41,7 +41,7 @@ class BootReceiver : BroadcastReceiver() {
             val telemetryDisabledOnBoot = sharedPrefs.getBoolean(TweakCommands.TELEMETRY_TOGGLE_KEY, false)
             val gpuMinFreqOnBoot = sharedPrefs.getBoolean("gpu_min_freq_on_boot", false)
             val gpuMaxFreqOnBoot = sharedPrefs.getBoolean("gpu_max_freq_on_boot", false)
-            val ovrLoaderOverrideOnBoot = sharedPrefs.getBoolean("ovr_loader_override_on_boot", true)
+            //val ovrLoaderOverrideOnBoot = sharedPrefs.getBoolean("ovr_loader_override_on_boot", true)
             val scope = CoroutineScope(Dispatchers.IO)
 
             // --- Activity Boot Logic ---
@@ -203,12 +203,12 @@ class BootReceiver : BroadcastReceiver() {
             }
 
             // --- OVR Platform Loader Runtime Override Boot Logic ---
-            if (ovrLoaderOverrideOnBoot) {
-                val serviceIntent = Intent(context, TweakService::class.java).apply {
-                    action = TweakService.ACTION_START_OVR_LOADER_OVERRIDE
-                }
-                context.startService(serviceIntent)
-            }
+            //if (ovrLoaderOverrideOnBoot) {
+                //val serviceIntent = Intent(context, TweakService::class.java).apply {
+                    //action = TweakService.ACTION_START_OVR_LOADER_OVERRIDE
+                //}
+                //context.startService(serviceIntent)
+            //}
 
             // --- Proxy Sensor Boot Logic ---
             if (proxSensorDisabled) {

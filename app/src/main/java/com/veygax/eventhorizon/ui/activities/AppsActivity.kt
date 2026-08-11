@@ -733,7 +733,17 @@ fun LaunchStartAppOnBootDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Select App to Launch on Boot") },
+        title = {
+            Column {
+                Text("Launch App on Boot")
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "Select an app to open automatically on startup.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        },
         text = {
             Column(modifier = Modifier.heightIn(max = 400.dp)) {
                 if (isLoading) {

@@ -100,61 +100,62 @@ class TweakService : Service() {
         done
     """.trimIndent()
 
-    private val OVR_LOADER_OVERRIDE_SCRIPT = """
-        #!/system/bin/sh
-        PATCHED="/data/local/tmp/eventhorizon/libovrplatformloader.so"
-        STATUS="/data/local/tmp/eventhorizon/ovr_loader_override_status.txt"
-        TARGETS="/data/local/tmp/eventhorizon/ovr_loader_override_targets.txt"
-        INTERVAL=10
+    //private val OVR_LOADER_OVERRIDE_SCRIPT = """
+        //#!/system/bin/sh
+        //PATCHED="/data/local/tmp/eventhorizon/libovrplatformloader.so"
+        //STATUS="/data/local/tmp/eventhorizon/ovr_loader_override_status.txt"
+        //TARGETS="/data/local/tmp/eventhorizon/ovr_loader_override_targets.txt"
+        //INTERVAL=10
 
-        mkdir -p /data/local/tmp/eventhorizon 2>/dev/null || true
+        //mkdir -p /data/local/tmp/eventhorizon 2>/dev/null || true
 
-        while true; do
-            mounted=0
-            skipped=0
-            missing=0
-            failed=0
+        //while true; do
+            //mounted=0
+            //skipped=0
+            //missing=0
+            //failed=0
 
-            if [ ! -f "${'$'}PATCHED" ]; then
-                echo "$(date '+%F %T') missing patched loader at ${'$'}PATCHED" > "${'$'}STATUS"
-                : > "${'$'}TARGETS"
-                sleep "${'$'}INTERVAL"
-                continue
-            fi
+            //if [ ! -f "${'$'}PATCHED" ]; then
+                //echo "$(date '+%F %T') missing patched loader at ${'$'}PATCHED" > "${'$'}STATUS"
+                //: > "${'$'}TARGETS"
+                //sleep "${'$'}INTERVAL"
+                //continue
+            //fi
 
-            : > "${'$'}TARGETS"
-            for target in $(find /data/app -path '*/lib/arm64/libovrplatformloader.so' -type f 2>/dev/null); do
-                if [ ! -f "${'$'}target" ]; then
-                    missing=$((missing + 1))
-                    continue
-                fi
+            //: > "${'$'}TARGETS"
+            //for target in $(find /data/app -path '*/lib/arm64/libovrplatformloader.so' -type f 2>/dev/null); do
+                //if [ ! -f "${'$'}target" ]; then
+                    //missing=$((missing + 1))
+                    //continue
+                //fi
 
-                if mount | grep -F " on ${'$'}target " >/dev/null 2>&1; then
-                    echo "${'$'}target" >> "${'$'}TARGETS"
-                    skipped=$((skipped + 1))
-                    continue
-                fi
+                //if mount | grep -F " on ${'$'}target " >/dev/null 2>&1; then
+                    //echo "${'$'}target" >> "${'$'}TARGETS"
+                    //skipped=$((skipped + 1))
+                    //continue
+                //fi
 
-                if mount -o bind "${'$'}PATCHED" "${'$'}target" 2>/dev/null; then
-                    echo "${'$'}target" >> "${'$'}TARGETS"
-                    mounted=$((mounted + 1))
-                else
-                    failed=$((failed + 1))
-                fi
-            done
+                //if mount -o bind "${'$'}PATCHED" "${'$'}target" 2>/dev/null; then
+                    //echo "${'$'}target" >> "${'$'}TARGETS"
+                    //mounted=$((mounted + 1))
+                //else
+                    //failed=$((failed + 1))
+                //fi
+            //done
 
-            {
-                echo "time=$(date '+%F %T')"
-                echo "mounted=${'$'}mounted"
-                echo "already_mounted=${'$'}skipped"
-                echo "missing=${'$'}missing"
-                echo "failed=${'$'}failed"
-                echo "patched_sha256=$(sha256sum "${'$'}PATCHED" 2>/dev/null | awk '{print ${'$'}1}')"
-            } > "${'$'}STATUS"
+            //{
+                //echo "time=$(date '+%F %T')"
+                //echo "mounted=${'$'}mounted"
+                //echo "already_mounted=${'$'}skipped"
+                //echo "missing=${'$'}missing"
+                //echo "failed=${'$'}failed"
+                //echo "patched_sha256=$(sha256sum "${'$'}PATCHED" 2>/dev/null | awk '{print ${'$'}1}')"
+            //} > "${'$'}STATUS"
 
-            sleep "${'$'}INTERVAL"
-        done
-    """.trimIndent()
+            //sleep "${'$'}INTERVAL"
+        //done
+    //""".trimIndent()
+    
 
     companion object {
         const val ACTION_START_RGB = "com.veygax.eventhorizon.START_RGB"

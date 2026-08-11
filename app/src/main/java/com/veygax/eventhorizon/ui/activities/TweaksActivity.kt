@@ -1694,6 +1694,8 @@ fun TweaksScreen(
                                     )
                                 }
                             }
+                            /*
+                            This shouldnt work on some games, and some anti-cheat detects this.
                             item {
                                 TweakCard(
                                     title = "Play Newer Games",
@@ -1725,6 +1727,7 @@ fun TweaksScreen(
                                     )
                                 }
                             }
+                            */
                             item {
                                 TweakCard("Spoof Build Type", "Spoofs build type. Userdebug can enable features such as Dogfood or ShellDebug. This will restart your device") {
                                     val runSpoof: (String) -> Unit = { type ->
