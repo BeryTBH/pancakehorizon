@@ -7,6 +7,7 @@ It provides device-owner controls for maintenance, diagnostics, research, and
 system administration on rooted or unlocked-bootloader headsets.
 
 it uses the pancake exploit for versions on v2.4 and above, below not tested
+this does not work for now
 
 ## Features
 
